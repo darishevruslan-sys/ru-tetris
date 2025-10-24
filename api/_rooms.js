@@ -1,9 +1,20 @@
-const { Redis } = require("@upstash/redis");
+import { Redis } from "@upstash/redis";
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
+
+async function loadRoom(code) {
+  if (!code) return null;
+  const room = await redis.get("room:" + code);
+  return room || null;
+}
+
+async function saveRoom(room) {
+  if (!room || !room.code) return;
+  await redis.set("room:" + room.code, room);
+}
 
 function genCode() {
   const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -14,40 +25,28 @@ function genCode() {
   return out;
 }
 
-async function loadRoom(code) {
-  if (!code) return null;
-  const data = await redis.get("room:" + code);
-  return data || null;
-}
-
-async function saveRoom(room) {
-  if (!room || !room.code) return;
-  await redis.set("room:" + room.code, room);
-}
-
-async function createRoom(playerId) {
+export async function createRoom(playerId) {
   let code;
-  let existing;
-  do {
+  while (true) {
     code = genCode();
-    existing = await loadRoom(code);
-  } while (existing);
+    const exists = await loadRoom(code);
+    if (!exists) break;
+  }
 
   const room = {
     code,
     players: [playerId],
-    snapshots: {},
-    ready: { [playerId]: false },
+    snapshots: {}, // { [pid]: { state, attack, ts } }
+    ready: {},
     startAt: null,
-    createdAt: Date.now()
+    createdAt: Date.now(),
   };
 
   await saveRoom(room);
   return room;
 }
 
-async function joinRoom(code, playerId) {
-  if (!code) return null;
+export async function joinRoom(code, playerId) {
   const room = await loadRoom(code);
   if (!room) return null;
 
@@ -55,85 +54,47 @@ async function joinRoom(code, playerId) {
     room.players.push(playerId);
   }
 
-  if (!room.ready) {
-    room.ready = {};
-  }
-
-  if (!Object.prototype.hasOwnProperty.call(room.ready, playerId)) {
-    room.ready[playerId] = false;
-  }
-
   await saveRoom(room);
   return room;
 }
 
-async function updateState(code, playerId, state, attack = 0) {
-  if (!code) return null;
+export async function updateState(code, playerId, state, attack = 0) {
   const room = await loadRoom(code);
   if (!room) return null;
 
-  if (!room.ready) {
-    room.ready = {};
-  }
-
-  if (!Object.prototype.hasOwnProperty.call(room.ready, playerId)) {
-    room.ready[playerId] = false;
-  }
-
-  const attackValue = Math.max(0, Math.min(20, Math.floor(Number(attack) || 0)));
-
-  if (!room.snapshots) {
-    room.snapshots = {};
-  }
+  const atk = Math.max(0, Math.min(20, Math.floor(Number(attack) || 0)));
 
   room.snapshots[playerId] = {
     state,
-    attack: attackValue,
-    ts: Date.now()
+    attack: atk,
+    ts: Date.now(),
   };
 
   await saveRoom(room);
   return room;
 }
 
-async function getRoom(code) {
-  if (!code) return null;
-  return await loadRoom(code);
-}
-
-async function setReady(code, playerId, readyBool) {
-  if (!code) return null;
+export async function setReady(code, playerId, readyBool) {
   const room = await loadRoom(code);
   if (!room) return null;
 
-  if (!room.ready) {
-    room.ready = {};
-  }
-
+  if (!room.ready) room.ready = {};
   room.ready[playerId] = !!readyBool;
 
-  const allReady =
+  // if 2 players are ready and there's no startAt yet -> set synchronized start
+  if (
     room.players.length >= 2 &&
-    room.players.every(pid => room.ready[pid]);
-
-  if (allReady) {
-    if (!room.startAt) {
-      room.startAt = Date.now() + 1500;
-    }
-  } else {
-    room.startAt = null;
+    room.ready[room.players[0]] &&
+    room.ready[room.players[1]] &&
+    !room.startAt
+  ) {
+    room.startAt = Date.now() + 1500;
   }
 
   await saveRoom(room);
   return room;
 }
 
-module.exports = {
-  createRoom,
-  joinRoom,
-  updateState,
-  getRoom,
-  setReady,
-  loadRoom,
-  saveRoom
-};
+export async function getRoom(code) {
+  return await loadRoom(code);
+}
