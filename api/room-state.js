@@ -34,7 +34,7 @@ module.exports = async (req, res) => {
     return;
   }
 
-  // collect opponent data
+  // collect opponent data + consume their attack
   const opponents = {};
   for (const pid of room.players) {
     if (pid === playerId) continue;
@@ -44,7 +44,7 @@ module.exports = async (req, res) => {
         state: snap.state,
         attack: snap.attack || 0
       };
-      // consume their attack so we don't resend the exact same garbage repeatedly
+      // consume garbage after giving it
       snap.attack = 0;
     }
   }
@@ -53,6 +53,8 @@ module.exports = async (req, res) => {
     ok: true,
     players: room.players,
     you: playerId,
-    opponents
+    opponents,
+    startAt: room.startAt || null,
+    ready: room.ready || {}
   });
 };
