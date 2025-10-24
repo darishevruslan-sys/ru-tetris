@@ -961,6 +961,7 @@ class Board {
   }
   reset() {
     this.grid = Array.from({ length: this.height }, () => Array(this.width).fill(null));
+    this.toppedOut = false;
   }
   isInside(x, y) {
     return x >= 0 && x < this.width && y >= 0 && y < this.height;
@@ -982,9 +983,18 @@ class Board {
     return this.canPlace(shape, x, y);
   }
   place(piece) {
+    let toppedOut = false;
     for (const cell of piece.cells()) {
-      if (cell.y >= 0 && cell.y < this.height) this.grid[cell.y][cell.x] = piece.type;
+      if (cell.y < 0) {
+        toppedOut = true;
+        continue;
+      }
+      if (cell.y < this.height) {
+        this.grid[cell.y][cell.x] = piece.type;
+      }
     }
+    if (toppedOut) this.toppedOut = true;
+    return toppedOut;
   }
   clearLines() {
     let cleared = 0;
@@ -1001,6 +1011,17 @@ class Board {
   }
   getSnapshot() {
     return this.grid.map(row => row.slice());
+  }
+  isToppedOut() {
+    if (this.toppedOut) return true;
+    // Hidden rows live above the visible field; any filled cell here signals top-out.
+    for (let y = 0; y < Math.min(this.hidden, this.grid.length); y++) {
+      if (this.grid[y].some(cell => cell !== null)) {
+        this.toppedOut = true;
+        return true;
+      }
+    }
+    return false;
   }
 }
 
@@ -1353,11 +1374,9 @@ class Game {
   }
   lockPiece() {
     if (!this.active) return;
-    const placedCells = this.active.cells();
-    this.board.place(this.active);
-    const toppedOut = placedCells.some(cell => cell.y < 0);
+    const toppedOut = this.board.place(this.active);
     this.stats.addPiece();
-    if (toppedOut) {
+    if (toppedOut || this.board.isToppedOut()) {
       this.combo = -1;
       this.lastClear = null;
       this.active = null;
