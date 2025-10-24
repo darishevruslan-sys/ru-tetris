@@ -328,7 +328,8 @@ const COLORS = {
   S: '#66ff99',
   T: '#c08cff',
   Z: '#ff5f7a',
-  ghost: 'rgba(255,255,255,0.08)'
+  ghost: 'rgba(255,255,255,0.08)',
+  garbage: '#555555'
 };
 const TETROMINO_SHAPES = {
   T: [
@@ -425,7 +426,7 @@ function getKickTable(pieceType, fromState, toState) {
   }
   return JLSTZ_KICKS[key] || [[0, 0]];
 }
-const COMBO_ATTACK = [0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5];
+const COMBO_ATTACK = [0, 1, 1, 2, 3, 4, 4, 5, 6, 7, 8];
 
 class Tetromino {
   constructor(type) {
@@ -511,6 +512,17 @@ class Board {
     const perfectClear = cleared > 0 && this.grid.every(row => row.every(v => !v));
     return { lines: cleared, perfectClear };
   }
+  addGarbage(lines) {
+    const amount = Math.max(0, Math.floor(lines));
+    if (amount <= 0) return;
+    for (let i = 0; i < amount; i++) {
+      const hole = Math.floor(Math.random() * this.width);
+      const row = Array(this.width).fill('garbage');
+      row[hole] = null;
+      this.grid.shift();
+      this.grid.push(row);
+    }
+  }
   getSnapshot() {
     return this.grid.map(row => row.slice());
   }
@@ -578,6 +590,7 @@ class MultiplayerClient {
     this.remoteStateHandler = () => {};
     this.garbageHandler = () => {};
     this.syncTimer = null;
+    this.lastAttack = 0;
   }
 
   configure(config) {
@@ -624,27 +637,40 @@ class MultiplayerClient {
 
   sendStateNow(gameState) {
     if (!this.roomCode || !this.playerId) return Promise.resolve(null);
-    return this.postJSON('/api/room-state', {
+    const payload = {
       roomCode: this.roomCode,
       playerId: this.playerId,
-      state: gameState
+      state: gameState,
+      attack: this.lastAttack || 0
+    };
+    return this.postJSON('/api/room-state', {
+      ...payload
     })
       .then((resp) => {
         if (!resp || !resp.ok) return resp;
-        let firstOpponent = null;
-        for (const key in resp.opponents) {
-          if (Object.prototype.hasOwnProperty.call(resp.opponents, key)) {
-            firstOpponent = resp.opponents[key];
-            break;
+        const opponents = resp.opponents || {};
+        let firstOpponentState = null;
+        for (const key in opponents) {
+          if (!Object.prototype.hasOwnProperty.call(opponents, key)) continue;
+          const opponent = opponents[key];
+          if (!opponent) continue;
+          let snapshot = opponent;
+          let incomingAttack = 0;
+          if (typeof opponent === 'object' && opponent !== null) {
+            if ('state' in opponent) snapshot = opponent.state;
+            if (Number.isFinite(opponent.attack)) incomingAttack = opponent.attack;
+          }
+          if (!firstOpponentState && snapshot) {
+            firstOpponentState = snapshot;
+          }
+          if (incomingAttack > 0) {
+            this.garbageHandler(incomingAttack);
           }
         }
         if (typeof this.remoteStateHandler === 'function') {
-          if (firstOpponent) {
-            this.remoteStateHandler(firstOpponent);
-          } else {
-            this.remoteStateHandler(null);
-          }
+          this.remoteStateHandler(firstOpponentState || null);
         }
+        this.lastAttack = 0;
         return resp;
       })
       .catch(() => null);
@@ -656,6 +682,12 @@ class MultiplayerClient {
 
   onGarbage(callback) {
     this.garbageHandler = typeof callback === 'function' ? callback : () => {};
+  }
+
+  sendAttack(lines) {
+    const amount = Math.max(0, Math.floor(lines));
+    if (amount <= 0) return;
+    this.lastAttack = Math.min(amount, 20);
   }
 
   startSyncLoop() {
@@ -702,7 +734,9 @@ class Game {
     this.lockTimer = 0;
     this.softDrop = false;
     this.areTimer = 0;
-    this.combo = -1;
+    this.combo = 0;
+    this.b2b = 0;
+    this.pendingGarbage = 0;
     this.lastClear = null;
     this.lastSharedState = null;
   }
@@ -772,7 +806,18 @@ class Game {
     piece.spinState = null;
     return piece;
   }
-  spawnNext() {
+  applyPendingGarbage() {
+    if (this.pendingGarbage <= 0) return;
+    const lines = this.pendingGarbage;
+    this.pendingGarbage = 0;
+    this.board.addGarbage(lines);
+    if (this.board.isToppedOut()) {
+      this.finish();
+    }
+  }
+  spawnNext(skipGarbage = false) {
+    if (!skipGarbage) this.applyPendingGarbage();
+    if (this.state !== 'running') return;
     const type = this.takeFromQueue();
     const piece = this.createPiece(type);
     if (!this.board.isValid(piece)) {
@@ -799,7 +844,7 @@ class Game {
     } else {
       this.holdPiece = current;
       this.active = null;
-      this.spawnNext();
+      this.spawnNext(true);
     }
     this.holdUsed = true;
     this.softDrop = false;
@@ -887,7 +932,8 @@ class Game {
     const toppedOut = this.board.place(this.active);
     this.stats.addPiece();
     if (toppedOut || this.board.isToppedOut()) {
-      this.combo = -1;
+      this.combo = 0;
+      this.b2b = 0;
       this.lastClear = null;
       this.active = null;
       this.holdUsed = false;
@@ -904,20 +950,39 @@ class Game {
     const perfectClear = clear.perfectClear;
     let attack = 0;
     if (lines > 0) {
-      this.combo += 1;
       this.stats.addLines(lines);
-      attack += this.computeAttack(lines, spinResult, perfectClear);
+      const spinType = spinResult.type || 'none';
+      const baseAttack = this.calculateAttack(lines, spinType, this.combo, this.b2b);
+      let totalAttack = baseAttack;
+      if (perfectClear) totalAttack += 10;
+      totalAttack = Math.min(totalAttack, 20);
+      if (totalAttack > 0 && this.pendingGarbage > 0) {
+        const cancel = Math.min(this.pendingGarbage, totalAttack);
+        this.pendingGarbage -= cancel;
+        totalAttack -= cancel;
+      }
+      attack = totalAttack;
+      if (attack > 0) {
+        this.stats.addAttack(attack);
+        if (this.multiplayerClient) {
+          this.multiplayerClient.sendAttack(attack);
+        }
+      }
+      this.combo += 1;
+      const b2bEligible = spinType === 't' || spinType === 'mini' || lines === 4;
+      if (b2bEligible) {
+        this.b2b = Math.min(this.b2b + 1, 999);
+      } else {
+        this.b2b = 0;
+      }
     } else {
-      this.combo = -1;
+      this.combo = 0;
+      this.b2b = 0;
     }
     // Detect top-out: if any blocks remain in hidden rows after lock/clear
     if (this.board.isToppedOut()) {
       this.finish();
       return;
-    }
-    if (attack > 0) this.stats.addAttack(attack);
-    if (attack > 0 && this.multiplayerClient) {
-      // TODO: отправка garbage сопернику через сетевой клиент
     }
     this.lastClear = { lines, spin: spinResult, perfectClear, attack };
     this.active = null;
@@ -930,29 +995,42 @@ class Game {
       this.finish();
     }
   }
-  computeAttack(lines, spinResult, perfectClear) {
+  calculateAttack(linesCleared, tSpinType, combo, b2b) {
     let attack = 0;
-    const comboIndex = Math.max(0, this.combo);
-    const comboBonus = comboIndex < COMBO_ATTACK.length ? COMBO_ATTACK[comboIndex] : COMBO_ATTACK[COMBO_ATTACK.length - 1];
-    const spinType = spinResult.type === 'mini' && lines >= 2 ? 't' : spinResult.type;
-    switch (spinType) {
+    switch (tSpinType) {
       case 't':
-        if (lines === 1) attack += 2;
-        else if (lines === 2) attack += 4;
-        else if (lines === 3) attack += 6;
+        if (linesCleared === 1) attack += 2;
+        else if (linesCleared === 2) attack += 4;
+        else if (linesCleared === 3) attack += 6;
         break;
       case 'mini':
-        if (lines === 1) attack += 1;
+        if (linesCleared === 1) attack += 1;
+        else if (linesCleared === 2) attack += 2;
         break;
       default:
-        if (lines === 2) attack += 1;
-        else if (lines === 3) attack += 2;
-        else if (lines === 4) attack += 4;
+        if (linesCleared === 2) attack += 1;
+        else if (linesCleared === 3) attack += 2;
+        else if (linesCleared === 4) attack += 4;
         break;
     }
-    attack += comboBonus;
-    if (perfectClear) attack += 10;
+    const comboIndex = Math.max(0, Math.min(combo, COMBO_ATTACK.length - 1));
+    attack += COMBO_ATTACK[comboIndex];
+    const b2bEligible = tSpinType === 't' || tSpinType === 'mini' || linesCleared === 4;
+    if (b2bEligible && b2b > 0) {
+      attack += Math.min(b2b, 4);
+    }
     return attack;
+  }
+  receiveGarbage(lines) {
+    const amount = Math.max(0, Math.floor(lines));
+    if (amount <= 0) return;
+    this.pendingGarbage += amount;
+    if (this.state === 'running' && !this.active && this.areTimer <= 0) {
+      this.applyPendingGarbage();
+      if (this.state === 'running' && !this.active) {
+        this.spawnNext();
+      }
+    }
   }
   evaluateSpin(piece) {
     if (piece.type !== 'T' || !piece.spinState || !piece.spinState.used) return { type: 'none' };
@@ -984,6 +1062,9 @@ class Game {
     this.active = null;
     this.areTimer = 0;
     this.softDrop = false;
+    this.combo = 0;
+    this.b2b = 0;
+    this.pendingGarbage = 0;
     this.stats.stop();
     this.shareState();
     // TODO: сохранение статистики результатов на сервере
@@ -1389,8 +1470,8 @@ class MatchmakingUI {
       this.remoteState = state;
       this.renderRemote();
     });
-    this.client.onGarbage(() => {
-      // TODO: отправка garbage будет обрабатываться при подключении сервера
+    this.client.onGarbage((lines) => {
+      this.game.receiveGarbage(lines);
     });
     this.refreshText();
     this.updateStatusText();
