@@ -35,6 +35,18 @@ canvas{background:#0f1628;border-radius:10px}
 .settings-row button{min-width:160px}
 .helper-text{color:#7c86b9;font-size:14px;text-align:center;line-height:1.5}
 .placeholder-card{background:#0b1020;padding:24px;border-radius:12px;color:#9aa4d9;text-align:center;max-width:420px;line-height:1.6}
+.match-card{background:#0b1020;padding:24px;border-radius:12px;color:#c7cff6;display:flex;flex-direction:column;gap:20px;width:100%;max-width:720px}
+.match-form{display:flex;flex-direction:column;gap:12px}
+.match-form-row{display:flex;gap:12px;flex-wrap:wrap}
+.match-input{flex:1;min-width:180px;padding:12px 16px;border-radius:8px;border:1px solid #1d2745;background:#050a18;color:#e4e7ff;font-size:16px}
+.match-status{color:#7c86b9;font-size:14px;line-height:1.4}
+.match-room-code{font-size:16px;color:#9aa4d9}
+.match-boards{display:flex;gap:24px;justify-content:center;flex-wrap:wrap}
+.match-boards.hidden{display:none}
+.match-board{display:flex;flex-direction:column;gap:10px;align-items:center}
+.match-board canvas{border:2px solid #1d2745;background:#0f1628;border-radius:10px}
+.match-stats{font-size:14px;color:#7c86b9;text-align:center;min-height:32px}
+input::placeholder{color:#4f5a8c}
 </style>
 </head>
 <body>
@@ -86,7 +98,31 @@ canvas{background:#0f1628;border-radius:10px}
 
   <div id="matchScreen" class="screen">
     <div class="logo" id="matchTitle"></div>
-    <div class="placeholder-card" id="matchDescription"></div>
+    <div class="match-card">
+      <div class="match-form" id="matchSetup">
+        <div class="match-status" id="matchDescription"></div>
+        <div class="match-form-row">
+          <input id="roomCodeInput" class="match-input" type="text" maxlength="8">
+          <button id="joinRoomBtn"></button>
+        </div>
+        <div class="match-form-row">
+          <button id="createRoomBtn"></button>
+          <div class="match-room-code" id="matchRoomCode"></div>
+        </div>
+      </div>
+      <div class="match-boards hidden" id="matchBoards">
+        <div class="match-board">
+          <div class="panel-title" id="localBoardTitle"></div>
+          <canvas id="localMatchBoard" width="200" height="400"></canvas>
+          <div class="match-stats" id="localBoardStats"></div>
+        </div>
+        <div class="match-board">
+          <div class="panel-title" id="remoteBoardTitle"></div>
+          <canvas id="remoteMatchBoard" width="200" height="400"></canvas>
+          <div class="match-stats" id="remoteBoardStats"></div>
+        </div>
+      </div>
+    </div>
     <button id="matchBackBtn"></button>
   </div>
 
@@ -124,8 +160,20 @@ const i18n = {
     },
     match: {
       title: 'Онлайн матчмейкинг',
-      description: 'Система онлайн-матчей находится в разработке. Скоро вы сможете соревноваться с другими игроками!',
-      back: 'Назад'
+      description: 'Введите код комнаты или создайте новую, чтобы начать матч.',
+      back: 'Назад',
+      join: 'Войти',
+      create: 'Создать комнату',
+      placeholder: 'Например, ABC123',
+      statusIdle: 'Введите код комнаты или создайте новую.',
+      statusNeedCode: 'Введите код комнаты, чтобы подключиться.',
+      statusConnecting: 'Подключение...',
+      statusError: 'Не удалось подключиться. Попробуйте ещё раз.',
+      createSuccess: 'Комната {{code}} создана. Поделитесь кодом с другом.',
+      joinSuccess: 'Вы присоединились к комнате {{code}}.',
+      localPlayer: 'Вы',
+      remotePlayer: 'Оппонент',
+      waitingOpponent: 'Ожидание данных от оппонента...'
     },
     login: {
       title: 'Войти',
@@ -165,8 +213,20 @@ const i18n = {
     },
     match: {
       title: 'Online Matchmaking',
-      description: 'Multiplayer is under construction. Stay tuned!',
-      back: 'Back'
+      description: 'Enter a room code or create a new one to start a match.',
+      back: 'Back',
+      join: 'Join',
+      create: 'Create Room',
+      placeholder: 'e.g. ABC123',
+      statusIdle: 'Enter a room code or create a new one.',
+      statusNeedCode: 'Type a room code to connect.',
+      statusConnecting: 'Connecting...',
+      statusError: 'Connection failed. Please try again.',
+      createSuccess: 'Room {{code}} created. Share the code with a friend.',
+      joinSuccess: 'Joined room {{code}}.',
+      localPlayer: 'You',
+      remotePlayer: 'Opponent',
+      waitingOpponent: 'Waiting for opponent data...'
     },
     login: {
       title: 'Sign In',
@@ -195,12 +255,15 @@ class Localization {
     this.dictionary = dictionary;
     this.lang = lang;
   }
-  t(path) {
+  t(path, values = {}) {
     const segments = path.split('.');
     let node = this.dictionary[this.lang];
     for (const segment of segments) {
       if (!node) break;
       node = node[segment];
+    }
+    if (typeof node === 'string') {
+      return node.replace(/\{\{(\w+)\}\}/g, (match, key) => (key in values ? values[key] : match));
     }
     return node ?? path;
   }
@@ -597,6 +660,107 @@ class StatsTracker {
   }
 }
 
+class MultiplayerClient {
+  constructor() {
+    this.remoteStateHandler = () => {};
+    this.garbageHandler = () => {};
+    this.mockTimer = null;
+    this.mockConfig = { width: 10, height: 20 };
+  }
+  configure(config) {
+    if (config) {
+      this.mockConfig = {
+        width: config.boardWidth ?? this.mockConfig.width,
+        height: config.boardHeight ?? this.mockConfig.height
+      };
+    }
+  }
+  createRoom(code) {
+    this.stopMock();
+    // TODO: реальная синхронизация состояний через WebSocket
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        this.startMock();
+        resolve({ code });
+      }, 150);
+    });
+  }
+  joinRoom(code) {
+    this.stopMock();
+    // TODO: реальная синхронизация состояний через WebSocket
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        this.startMock();
+        resolve({ code });
+      }, 150);
+    });
+  }
+  sendState(state) {
+    // TODO: реальная синхронизация состояний через WebSocket
+    this.lastState = state;
+  }
+  onRemoteState(callback) {
+    this.remoteStateHandler = typeof callback === 'function' ? callback : () => {};
+  }
+  onGarbage(callback) {
+    this.garbageHandler = typeof callback === 'function' ? callback : () => {};
+  }
+  disconnect() {
+    this.stopMock();
+  }
+  startMock() {
+    this.stopMock();
+    if (typeof this.remoteStateHandler === 'function') {
+      this.remoteStateHandler(this.generateMockState());
+    }
+    this.mockTimer = setInterval(() => {
+      if (typeof this.remoteStateHandler === 'function') {
+        this.remoteStateHandler(this.generateMockState());
+      }
+    }, 2000);
+  }
+  stopMock() {
+    if (this.mockTimer) {
+      clearInterval(this.mockTimer);
+      this.mockTimer = null;
+    }
+  }
+  generateMockState() {
+    const width = this.mockConfig.width;
+    const height = this.mockConfig.height;
+    const matrix = Array.from({ length: height }, () => Array(width).fill(null));
+    for (let x = 0; x < width; x++) {
+      const columnHeight = Math.floor(Math.random() * Math.min(height, 6));
+      for (let y = height - 1; y >= height - columnHeight; y--) {
+        matrix[y][x] = BAG[(x + y) % BAG.length];
+      }
+    }
+    const activeType = BAG[Math.floor(Math.random() * BAG.length)];
+    const activeCells = TETROMINO_SHAPES[activeType][0].map(([dx, dy]) => ({
+      x: 4 + dx,
+      y: 0 + dy
+    }));
+    const time = Math.random() * 120;
+    const pieces = Math.floor(time * 1.5);
+    const attack = Math.floor(Math.random() * 40);
+    const lines = Math.floor(Math.random() * 40);
+    return {
+      matrix,
+      active: { type: activeType, rotation: 0, x: 4, y: 0, cells: activeCells },
+      hold: null,
+      queue: BAG.slice(0, 5),
+      stats: {
+        lines,
+        time,
+        attack,
+        pieces,
+        apm: time > 0 ? attack / (time / 60) : 0,
+        pps: time > 0 ? pieces / time : 0
+      }
+    };
+  }
+}
+
 class Game {
   constructor(config) {
     this.config = config;
@@ -604,6 +768,8 @@ class Game {
     this.stats = new StatsTracker();
     this.callbacks = {};
     this.random = Math.random.bind(Math);
+    this.multiplayerClient = null;
+    this.lastSharedState = null;
     this.reset();
   }
   reset() {
@@ -618,9 +784,13 @@ class Game {
     this.areTimer = 0;
     this.combo = -1;
     this.lastClear = null;
+    this.lastSharedState = null;
   }
   setCallbacks(cb) {
     this.callbacks = cb || {};
+  }
+  attachMultiplayer(client) {
+    this.multiplayerClient = client;
   }
   start() {
     this.reset();
@@ -631,6 +801,7 @@ class Game {
     this.ensureQueue();
     this.spawnNext();
     if (this.callbacks.state) this.callbacks.state(this.state);
+    this.shareState();
   }
   update(dt) {
     if (this.state !== 'running') return;
@@ -656,6 +827,7 @@ class Game {
     } else {
       this.lockTimer = 0;
     }
+    this.shareState();
   }
   ensureQueue() {
     while (this.queue.length < this.config.previewCount + 1) {
@@ -790,6 +962,9 @@ class Game {
       this.combo = -1;
     }
     if (attack > 0) this.stats.addAttack(attack);
+    if (attack > 0 && this.multiplayerClient) {
+      // TODO: отправка garbage сопернику через сетевой клиент
+    }
     this.lastClear = { lines, spin: spinResult, perfectClear, attack };
     this.active = null;
     this.holdUsed = false;
@@ -856,6 +1031,8 @@ class Game {
     this.areTimer = 0;
     this.softDrop = false;
     this.stats.stop();
+    this.shareState();
+    // TODO: сохранение статистики результатов на сервере
     if (this.callbacks.finish) this.callbacks.finish(this.getSummary());
   }
   getSummary() {
@@ -877,12 +1054,86 @@ class Game {
       hidden: this.board.hidden
     };
   }
+  getNetworkState() {
+    const matrix = this.board.getVisible().map(row => row.map(cell => cell));
+    const active = this.active
+      ? {
+          type: this.active.type,
+          rotation: this.active.rotation,
+          x: this.active.x,
+          y: this.active.y,
+          cells: this.active.cells().map(cell => ({ x: cell.x, y: cell.y }))
+        }
+      : null;
+    return {
+      matrix,
+      active,
+      hold: this.holdPiece,
+      queue: this.queue.slice(0, this.config.previewCount),
+      stats: this.stats.snapshot()
+    };
+  }
+  shareState() {
+    if (!this.multiplayerClient) return;
+    const snapshot = this.getNetworkState();
+    const serialized = JSON.stringify(snapshot);
+    if (serialized === this.lastSharedState) return;
+    this.lastSharedState = serialized;
+    this.multiplayerClient.sendState(snapshot);
+  }
   ghostCells(piece) {
     const shadow = piece.clone();
     while (this.board.isValid(shadow, shadow.x, shadow.y + 1)) shadow.y++;
     return shadow.cells();
   }
 }
+class BoardSnapshotRenderer {
+  constructor(canvas, config) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.width = config.boardWidth;
+    this.height = config.boardHeight;
+    this.blockSize = Math.floor(canvas.width / this.width);
+  }
+  clear() {
+    this.ctx.fillStyle = '#050a18';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+  }
+  render(snapshot) {
+    this.clear();
+    if (!snapshot) return;
+    const matrix = snapshot.matrix || [];
+    for (let y = 0; y < Math.min(this.height, matrix.length); y++) {
+      const row = matrix[y] || [];
+      for (let x = 0; x < this.width; x++) {
+        const cell = row[x];
+        if (cell) this.drawBlock(x, y, COLORS[cell] || '#f8f9ff');
+      }
+    }
+    if (Array.isArray(snapshot.ghostCells)) {
+      this.drawCells(snapshot.ghostCells, COLORS.ghost);
+    }
+    if (snapshot.active && Array.isArray(snapshot.active.cells)) {
+      const color = COLORS[snapshot.active.type] || '#f8f9ff';
+      this.drawCells(snapshot.active.cells, color);
+    }
+  }
+  drawCells(cells, color) {
+    for (const cell of cells) {
+      if (typeof cell.x !== 'number' || typeof cell.y !== 'number') continue;
+      if (cell.y < 0 || cell.y >= this.height) continue;
+      if (cell.x < 0 || cell.x >= this.width) continue;
+      this.drawBlock(cell.x, cell.y, color);
+    }
+  }
+  drawBlock(x, y, color) {
+    const size = this.blockSize;
+    const margin = 1;
+    this.ctx.fillStyle = color;
+    this.ctx.fillRect(x * size + margin, y * size + margin, size - margin * 2, size - margin * 2);
+  }
+}
+
 class Renderer {
   constructor(elements) {
     this.boardCtx = elements.board.getContext('2d');
@@ -1109,12 +1360,198 @@ function formatTime(seconds) {
   const cent = Math.floor((secs - whole) * 100);
   return `${String(minutes).padStart(2, '0')}:${String(whole).padStart(2, '0')}.${String(cent).padStart(2, '0')}`;
 }
+class MatchmakingUI {
+  constructor({ locale, client, game, config }) {
+    this.locale = locale;
+    this.client = client;
+    this.game = game;
+    this.config = config;
+    this.elements = {
+      description: document.getElementById('matchDescription'),
+      input: document.getElementById('roomCodeInput'),
+      joinBtn: document.getElementById('joinRoomBtn'),
+      createBtn: document.getElementById('createRoomBtn'),
+      roomCode: document.getElementById('matchRoomCode'),
+      boards: document.getElementById('matchBoards'),
+      localTitle: document.getElementById('localBoardTitle'),
+      remoteTitle: document.getElementById('remoteBoardTitle'),
+      localCanvas: document.getElementById('localMatchBoard'),
+      remoteCanvas: document.getElementById('remoteMatchBoard'),
+      localStats: document.getElementById('localBoardStats'),
+      remoteStats: document.getElementById('remoteBoardStats')
+    };
+    this.roomCode = null;
+    this.roomMode = 'idle';
+    this.remoteState = null;
+    this.localRenderer = new BoardSnapshotRenderer(this.elements.localCanvas, config);
+    this.remoteRenderer = new BoardSnapshotRenderer(this.elements.remoteCanvas, config);
+    this.attachEvents();
+    this.client.onRemoteState((state) => {
+      this.remoteState = state;
+      this.renderRemote();
+    });
+    this.client.onGarbage(() => {
+      // TODO: отправка garbage будет обрабатываться при подключении сервера
+    });
+    this.refreshText();
+    this.updateStatusText();
+  }
+  attachEvents() {
+    this.elements.joinBtn.addEventListener('click', () => this.handleJoin());
+    this.elements.createBtn.addEventListener('click', () => this.handleCreate());
+    this.elements.input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        this.handleJoin();
+      }
+    });
+  }
+  refreshText() {
+    this.elements.joinBtn.textContent = this.locale.t('match.join');
+    this.elements.createBtn.textContent = this.locale.t('match.create');
+    this.elements.input.placeholder = this.locale.t('match.placeholder');
+    this.elements.localTitle.textContent = this.locale.t('match.localPlayer');
+    this.elements.remoteTitle.textContent = this.locale.t('match.remotePlayer');
+    if (this.roomCode) {
+      this.elements.roomCode.textContent = this.locale.t(
+        this.roomMode === 'created' ? 'match.createSuccess' : 'match.joinSuccess',
+        { code: this.roomCode }
+      );
+    }
+    this.updateStatusText();
+    this.renderRemote();
+  }
+  handleJoin() {
+    const code = this.elements.input.value.trim().toUpperCase();
+    if (!code) {
+      this.roomMode = 'needCode';
+      this.updateStatusText();
+      return;
+    }
+    this.roomMode = 'connecting';
+    this.updateStatusText();
+    this.client.joinRoom(code)
+      .then(() => {
+        this.roomCode = code;
+        this.roomMode = 'joined';
+        this.onRoomReady();
+      })
+      .catch(() => {
+        this.roomMode = 'error';
+        this.updateStatusText();
+      });
+  }
+  handleCreate() {
+    const code = this.generateCode();
+    this.elements.input.value = code;
+    this.roomMode = 'connecting';
+    this.updateStatusText();
+    this.client.createRoom(code)
+      .then(() => {
+        this.roomCode = code;
+        this.roomMode = 'created';
+        this.onRoomReady();
+      })
+      .catch(() => {
+        this.roomMode = 'error';
+        this.updateStatusText();
+      });
+  }
+  onRoomReady() {
+    this.elements.roomCode.textContent = this.locale.t(
+      this.roomMode === 'created' ? 'match.createSuccess' : 'match.joinSuccess',
+      { code: this.roomCode }
+    );
+    this.elements.boards.classList.remove('hidden');
+    this.renderLocal(this.game);
+    this.renderRemote();
+    this.updateStatusText();
+  }
+  leaveRoom() {
+    this.roomCode = null;
+    this.roomMode = 'idle';
+    this.remoteState = null;
+    this.elements.roomCode.textContent = '';
+    this.elements.boards.classList.add('hidden');
+    this.client.disconnect();
+    this.updateStatusText();
+    this.renderRemote();
+  }
+  updateStatusText() {
+    let key = 'match.statusIdle';
+    switch (this.roomMode) {
+      case 'connecting':
+        key = 'match.statusConnecting';
+        break;
+      case 'needCode':
+        key = 'match.statusNeedCode';
+        break;
+      case 'error':
+        key = 'match.statusError';
+        break;
+      case 'created':
+        key = 'match.createSuccess';
+        break;
+      case 'joined':
+        key = 'match.joinSuccess';
+        break;
+      default:
+        key = 'match.statusIdle';
+        break;
+    }
+    const params = this.roomCode ? { code: this.roomCode } : {};
+    this.elements.description.textContent = this.locale.t(key, params);
+  }
+  renderLocal(game) {
+    const state = game.getRenderState();
+    this.localRenderer.render({
+      matrix: state.grid,
+      active: state.active
+        ? { type: state.active.type, cells: state.active.cells() }
+        : null,
+      ghostCells: state.ghost
+    });
+    this.elements.localStats.textContent = this.formatStats(state.stats);
+  }
+  renderRemote() {
+    if (!this.remoteState) {
+      this.remoteRenderer.clear();
+      this.elements.remoteStats.textContent = this.locale.t('match.waitingOpponent');
+      return;
+    }
+    this.remoteRenderer.render({
+      matrix: this.remoteState.matrix,
+      active: this.remoteState.active,
+      ghostCells: this.remoteState.ghost || null
+    });
+    this.elements.remoteStats.textContent = this.formatStats(this.remoteState.stats);
+  }
+  formatStats(stats) {
+    if (!stats) return '—';
+    const lines = Number.isFinite(stats.lines) ? stats.lines : 0;
+    const time = Number.isFinite(stats.time) ? stats.time : 0;
+    const apm = Number.isFinite(stats.apm) ? stats.apm : 0;
+    const pps = Number.isFinite(stats.pps) ? stats.pps : 0;
+    return `LINES: ${lines} | TIME: ${formatTime(time)} | APM: ${apm.toFixed(1)} | PPS: ${pps.toFixed(2)}`;
+  }
+  generateCode() {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+      code += alphabet[Math.floor(Math.random() * alphabet.length)];
+    }
+    return code;
+  }
+}
 class App {
   constructor() {
     this.locale = new Localization(i18n, 'ru');
     this.settingsStore = new SettingsStore('ru-tetris-binds', DEFAULT_BINDINGS);
     this.screenManager = new ScreenManager();
     this.game = new Game(CONFIG);
+    this.multiplayer = new MultiplayerClient();
+    this.multiplayer.configure(CONFIG);
+    this.game.attachMultiplayer(this.multiplayer);
     const hud = {
       lines: document.getElementById('linesVal'),
       time: document.getElementById('timeVal'),
@@ -1126,6 +1563,12 @@ class App {
       hold: document.getElementById('holdCanvas'),
       next: document.getElementById('nextCanvas'),
       hud,
+      config: CONFIG
+    });
+    this.matchmaking = new MatchmakingUI({
+      locale: this.locale,
+      client: this.multiplayer,
+      game: this.game,
       config: CONFIG
     });
     this.input = new InputManager(this.game, this.settingsStore);
@@ -1174,15 +1617,24 @@ class App {
     gameBackBtn.textContent = this.locale.t('game.back');
 
     menuPlayBtn.addEventListener('click', () => this.startFortyLines());
-    menuMatchBtn.addEventListener('click', () => this.openScreen('matchScreen'));
+    menuMatchBtn.addEventListener('click', () => {
+      this.matchmaking.refreshText();
+      this.openScreen('matchScreen');
+    });
     menuSettingsBtn.addEventListener('click', () => {
       this.settingsUI.refresh();
       this.openScreen('settingsScreen');
     });
-    menuLoginBtn.addEventListener('click', () => this.openScreen('loginScreen'));
+    menuLoginBtn.addEventListener('click', () => {
+      // TODO: авторизация по нику и синхронизация профиля через backend
+      this.openScreen('loginScreen');
+    });
 
     settingsBackBtn.addEventListener('click', () => this.openScreen('mainMenu'));
-    matchBackBtn.addEventListener('click', () => this.openScreen('mainMenu'));
+    matchBackBtn.addEventListener('click', () => {
+      this.matchmaking.leaveRoom();
+      this.openScreen('mainMenu');
+    });
     loginBackBtn.addEventListener('click', () => this.openScreen('mainMenu'));
     gameBackBtn.addEventListener('click', () => this.openScreen('mainMenu'));
 
@@ -1223,6 +1675,7 @@ class App {
     this.input.update(dt);
     this.game.update(dt);
     this.renderer.render(this.game);
+    this.matchmaking.renderLocal(this.game);
     requestAnimationFrame((ts) => this.loop(ts));
   }
 }
