@@ -181,7 +181,8 @@ const i18n = {
       back: 'Назад'
     },
     result: {
-      title: '40 линий завершены!',
+      win: '40 линий завершены!',
+      lose: 'Вы проиграли',
       toMenu: 'В меню'
     },
     actions: {
@@ -234,7 +235,8 @@ const i18n = {
       back: 'Back'
     },
     result: {
-      title: '40 Lines Complete!',
+      win: '40 Lines Complete!',
+      lose: 'Game Over',
       toMenu: 'Main Menu'
     },
     actions: {
@@ -822,6 +824,7 @@ class Game {
     this.combo = -1;
     this.lastClear = null;
     this.lastSharedState = null;
+    this.resultReason = null;
   }
   setCallbacks(cb) {
     this.callbacks = cb || {};
@@ -893,7 +896,7 @@ class Game {
     const type = this.takeFromQueue();
     const piece = this.createPiece(type);
     if (!this.board.isValid(piece)) {
-      this.finish();
+      this.endGame('topout');
       return;
     }
     this.active = piece;
@@ -909,7 +912,7 @@ class Game {
       this.holdPiece = current;
       const piece = this.createPiece(nextType);
       if (!this.board.isValid(piece)) {
-        this.finish();
+        this.endGame('topout');
         return;
       }
       this.active = piece;
@@ -1001,12 +1004,18 @@ class Game {
   }
   lockPiece() {
     if (!this.active) return;
+    const placedCells = this.active.cells();
     this.board.place(this.active);
+    this.stats.addPiece();
+    const toppedOut = placedCells.some(cell => cell.y < 0);
+    if (toppedOut) {
+      this.endGame('topout');
+      return;
+    }
     const spinResult = this.evaluateSpin(this.active);
     const clear = this.board.clearLines();
     const lines = clear.lines;
     const perfectClear = clear.perfectClear;
-    this.stats.addPiece();
     let attack = 0;
     if (lines > 0) {
       this.combo += 1;
@@ -1032,7 +1041,7 @@ class Game {
     this.softDrop = false;
     this.areTimer = lines > 0 ? this.config.lineClearAre : this.config.are;
     if (this.stats.lines >= 40) {
-      this.finish();
+      this.endGame('sprint_complete');
     }
   }
   computeAttack(lines, spinResult, perfectClear) {
@@ -1084,15 +1093,25 @@ class Game {
     this.softDrop = active;
   }
   finish() {
+    this.endGame('sprint_complete');
+  }
+  endGame(reason = 'sprint_complete') {
     if (this.state === 'finished') return;
     this.state = 'finished';
+    this.resultReason = reason;
     this.active = null;
     this.areTimer = 0;
+    this.lockTimer = 0;
+    this.fallAcc = 0;
     this.softDrop = false;
+    this.holdUsed = false;
+    this.lastClear = null;
     this.stats.stop();
     this.shareState();
     // TODO: сохранение статистики результатов на сервере
-    if (this.callbacks.finish) this.callbacks.finish(this.getSummary());
+    if (this.callbacks.finish) {
+      this.callbacks.finish({ summary: this.getSummary(), reason });
+    }
   }
   getSummary() {
     const snap = this.stats.snapshot();
@@ -1358,6 +1377,9 @@ class InputManager {
     const action = this.bindingsByKey[e.code];
     if (!action) return;
     e.preventDefault();
+    if (this.game.state !== 'running') {
+      return;
+    }
     switch (action) {
       case 'moveLeft':
         if (e.repeat) return;
@@ -1426,6 +1448,18 @@ class InputManager {
     }
   }
   update(dt) {
+    if (this.game.state !== 'running') {
+      if (this.softDrop) {
+        this.softDrop = false;
+      }
+      this.game.setSoftDrop(false);
+      this.left = false;
+      this.right = false;
+      this.lastDir = 0;
+      this.dasTimer = 0;
+      this.arrTimer = 0;
+      return;
+    }
     this.game.setSoftDrop(this.softDrop);
     const dir = this.getHorizontalDir();
     if (dir === 0) {
@@ -1684,7 +1718,7 @@ class App {
     );
     this.bindUI();
     this.game.setCallbacks({
-      finish: (summary) => this.showResults(summary)
+      finish: (result) => this.showResults(result)
     });
     this.lastFrame = performance.now();
     requestAnimationFrame((ts) => this.loop(ts));
@@ -1743,7 +1777,7 @@ class App {
     gameBackBtn.addEventListener('click', () => this.openScreen('mainMenu'));
 
     document.getElementById('resultMenuBtn').textContent = this.locale.t('result.toMenu');
-    document.getElementById('resultTitle').textContent = this.locale.t('result.title');
+    document.getElementById('resultTitle').textContent = this.locale.t('result.win');
     document.getElementById('resultMenuBtn').addEventListener('click', () => {
       this.hideOverlay();
       this.openScreen('mainMenu');
@@ -1753,7 +1787,7 @@ class App {
     const element = document.getElementById(id);
     this.screenManager.show(element);
     if (id !== 'gameScreen' && this.game.state === 'running') {
-      this.game.finish();
+      this.game.finish('aborted');
       this.hideOverlay();
     }
     if (id === 'gameScreen' && this.game.state !== 'running') {
@@ -1764,9 +1798,18 @@ class App {
   startFortyLines() {
     this.openScreen('gameScreen');
   }
-  showResults(summary) {
+  showResults(result) {
+    if (!result || !result.summary) return;
+    const { summary, reason } = result;
+    if (reason === 'aborted') {
+      this.hideOverlay();
+      return;
+    }
     const overlay = document.getElementById('resultOverlay');
+    const titleEl = document.getElementById('resultTitle');
     const resultStats = document.getElementById('resultStats');
+    const titleKey = reason === 'topout' ? 'result.lose' : 'result.win';
+    titleEl.textContent = this.locale.t(titleKey);
     resultStats.innerHTML = `LINES: ${summary.lines}<br>TIME: ${formatTime(summary.time)}<br>APM: ${summary.apm.toFixed(2)}<br>PPS: ${summary.pps.toFixed(2)}`;
     overlay.classList.remove('hidden');
   }
