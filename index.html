@@ -79,7 +79,7 @@ input::placeholder{color:#4f5a8c}
         <div class="panel-title">HOLD</div>
         <canvas id="holdCanvas" width="140" height="140"></canvas>
       </div>
-      <canvas id="boardCanvas" width="280" height="560"></canvas>
+      <canvas id="boardCanvas" width="280" height="616"></canvas>
       <div class="panel">
         <div class="panel-title">NEXT</div>
         <canvas id="nextCanvas" width="140" height="420"></canvas>
@@ -113,12 +113,12 @@ input::placeholder{color:#4f5a8c}
       <div class="match-boards hidden" id="matchBoards">
         <div class="match-board">
           <div class="panel-title" id="localBoardTitle"></div>
-          <canvas id="localMatchBoard" width="200" height="400"></canvas>
+          <canvas id="localMatchBoard" width="200" height="440"></canvas>
           <div class="match-stats" id="localBoardStats"></div>
         </div>
         <div class="match-board">
           <div class="panel-title" id="remoteBoardTitle"></div>
-          <canvas id="remoteMatchBoard" width="200" height="400"></canvas>
+          <canvas id="remoteMatchBoard" width="200" height="440"></canvas>
           <div class="match-stats" id="remoteBoardStats"></div>
         </div>
       </div>
@@ -141,6 +141,365 @@ input::placeholder{color:#4f5a8c}
 
 <script>
 (() => {
+  // Super Rotation System (SRS) definition with wall kicks (Y-axis downwards).
+  (function initializeSRS() {
+    const ROTATION_NAMES = ['0', 'R', '2', 'L'];
+    const PIECE_SHAPES = {
+      T: [
+        [[-1, 0], [0, 0], [1, 0], [0, -1]],
+        [[0, -1], [0, 0], [0, 1], [1, 0]],
+        [[-1, 0], [0, 0], [1, 0], [0, 1]],
+        [[0, -1], [0, 0], [0, 1], [-1, 0]]
+      ],
+      L: [
+        [[-1, 0], [0, 0], [1, 0], [1, -1]],
+        [[0, -1], [0, 0], [0, 1], [1, 1]],
+        [[-1, 0], [0, 0], [1, 0], [-1, 1]],
+        [[0, -1], [0, 0], [0, 1], [-1, -1]]
+      ],
+      J: [
+        [[-1, 0], [0, 0], [1, 0], [-1, -1]],
+        [[0, -1], [0, 0], [0, 1], [1, -1]],
+        [[-1, 0], [0, 0], [1, 0], [1, 1]],
+        [[0, -1], [0, 0], [0, 1], [-1, 1]]
+      ],
+      S: [
+        [[-1, 0], [0, 0], [0, -1], [1, -1]],
+        [[0, -1], [0, 0], [1, 0], [1, 1]],
+        [[-1, 1], [0, 1], [0, 0], [1, 0]],
+        [[-1, -1], [-1, 0], [0, 0], [0, 1]]
+      ],
+      Z: [
+        [[-1, -1], [0, -1], [0, 0], [1, 0]],
+        [[1, -1], [1, 0], [0, 0], [0, 1]],
+        [[-1, 0], [0, 0], [0, 1], [1, 1]],
+        [[0, -1], [0, 0], [-1, 0], [-1, 1]]
+      ],
+      I: [
+        [[-1, 0], [0, 0], [1, 0], [2, 0]],
+        [[0, -1], [0, 0], [0, 1], [0, 2]],
+        [[-2, 0], [-1, 0], [0, 0], [1, 0]],
+        [[0, -2], [0, -1], [0, 0], [0, 1]]
+      ],
+      O: [
+        [[0, 0], [1, 0], [0, -1], [1, -1]],
+        [[0, 0], [1, 0], [0, -1], [1, -1]],
+        [[0, 0], [1, 0], [0, -1], [1, -1]],
+        [[0, 0], [1, 0], [0, -1], [1, -1]]
+      ]
+    };
+
+    const O_ORIGIN_OFFSETS = [[0, 0], [0, -1], [-1, -1], [-1, 0]];
+
+    // Y-DOWN ⇒ invert Y from published tables.
+    const KICKS90 = {
+      JLSTZ: {
+        '0>R': [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],
+        'R>0': [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]],
+        'R>2': [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]],
+        '2>R': [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],
+        '2>L': [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]],
+        'L>2': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
+        'L>0': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
+        '0>L': [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]]
+      },
+      I: {
+        // I-piece uses SRS+ (left tables mirrored from right).
+        '0>R': [[0, 0], [-2, 0], [1, 0], [-2, 1], [1, -2]],
+        'R>0': [[0, 0], [2, 0], [-1, 0], [2, -1], [-1, 2]],
+        'R>2': [[0, 0], [-1, 0], [2, 0], [-1, -2], [2, 1]],
+        '2>R': [[0, 0], [1, 0], [-2, 0], [1, 2], [-2, -1]],
+        '0>L': [[0, 0], [2, 0], [-1, 0], [2, 1], [-1, -2]],
+        'L>0': [[0, 0], [-2, 0], [1, 0], [-2, -1], [1, 2]],
+        'L>2': [[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]],
+        '2>L': [[0, 0], [-1, 0], [2, 0], [-1, 2], [2, -1]]
+      }
+    };
+
+    // TODO: Replace with official TETR.IO 180 kick tables when available.
+    const DEFAULT_180_KICKS = {
+      I: {
+        '0>2': [[0, 0], [-1, 0], [1, 0], [-2, 0], [2, 0], [-1, -1], [1, -1]],
+        '2>0': [[0, 0], [1, 0], [-1, 0], [2, 0], [-2, 0], [1, 1], [-1, 1]],
+        'R>L': [[0, 0], [1, 0], [-2, 0], [1, -1], [-2, -1], [2, 0]],
+        'L>R': [[0, 0], [-1, 0], [2, 0], [-1, -1], [2, -1], [-2, 0]]
+      },
+      J: {
+        '0>2': [[0, 0], [0, 1], [-1, 0], [1, 0], [0, -1]],
+        '2>0': [[0, 0], [0, -1], [-1, 0], [1, 0], [0, 1]],
+        'R>L': [[0, 0], [1, 0], [0, 1], [1, 1], [-1, 0]],
+        'L>R': [[0, 0], [-1, 0], [0, 1], [-1, 1], [1, 0]]
+      },
+      L: {
+        '0>2': [[0, 0], [0, 1], [-1, 0], [1, 0], [0, -1]],
+        '2>0': [[0, 0], [0, -1], [-1, 0], [1, 0], [0, 1]],
+        'R>L': [[0, 0], [1, 0], [0, 1], [1, 1], [-1, 0]],
+        'L>R': [[0, 0], [-1, 0], [0, 1], [-1, 1], [1, 0]]
+      },
+      O: {
+        '0>2': [[0, 0]],
+        '2>0': [[0, 0]],
+        'R>L': [[0, 0]],
+        'L>R': [[0, 0]]
+      },
+      S: {
+        '0>2': [[0, 0], [0, 1], [-1, 0], [1, 0]],
+        '2>0': [[0, 0], [0, -1], [-1, 0], [1, 0]],
+        'R>L': [[0, 0], [1, 0], [0, 1], [1, 1]],
+        'L>R': [[0, 0], [-1, 0], [0, 1], [-1, 1]]
+      },
+      T: {
+        '0>2': [[0, 0], [0, 1], [-1, 0], [1, 0], [0, -1]],
+        '2>0': [[0, 0], [0, -1], [-1, 0], [1, 0], [0, 1]],
+        'R>L': [[0, 0], [1, 0], [0, 1], [1, 1], [-1, 0]],
+        'L>R': [[0, 0], [-1, 0], [0, 1], [-1, 1], [1, 0]]
+      },
+      Z: {
+        '0>2': [[0, 0], [0, 1], [-1, 0], [1, 0]],
+        '2>0': [[0, 0], [0, -1], [-1, 0], [1, 0]],
+        'R>L': [[0, 0], [1, 0], [0, 1], [1, 1]],
+        'L>R': [[0, 0], [-1, 0], [0, 1], [-1, 1]]
+      }
+    };
+
+    const options = {
+      blockJLDownkickOn90to270: true
+    };
+
+    function cloneKickset(source) {
+      const result = {};
+      if (!source) return result;
+      for (const piece in source) {
+        if (!Object.prototype.hasOwnProperty.call(source, piece)) continue;
+        const entries = source[piece];
+        const clone = {};
+        for (const key in entries) {
+          if (!Object.prototype.hasOwnProperty.call(entries, key)) continue;
+          clone[key] = entries[key].map(offset => [offset[0], offset[1]]);
+        }
+        result[piece] = clone;
+      }
+      return result;
+    }
+
+    function mergeKicksets(base, override) {
+      const merged = cloneKickset(base);
+      if (!override) return merged;
+      for (const piece in override) {
+        if (!Object.prototype.hasOwnProperty.call(override, piece)) continue;
+        const target = merged[piece] || (merged[piece] = {});
+        const entries = override[piece];
+        for (const key in entries) {
+          if (!Object.prototype.hasOwnProperty.call(entries, key)) continue;
+          target[key] = entries[key].map(offset => [offset[0], offset[1]]);
+        }
+      }
+      return merged;
+    }
+
+    let kicks180 = mergeKicksets(DEFAULT_180_KICKS);
+
+    function getCells(piece) {
+      const shape = PIECE_SHAPES[piece.type];
+      if (!shape) return [];
+      const offsets = shape[piece.rot & 3];
+      return offsets.map(([dx, dy]) => [piece.x + dx, piece.y + dy]);
+    }
+
+    function canPlace(piece, board) {
+      const cells = getCells(piece);
+      for (let i = 0; i < cells.length; i++) {
+        const x = cells[i][0];
+        const y = cells[i][1];
+        if (x < 0 || x >= board.width) return false;
+        if (y >= board.height) return false;
+        if (y >= 0 && !board.isEmpty(x, y)) return false;
+      }
+      return true;
+    }
+
+    function get90KickTests(type, from, to) {
+      const key = `${ROTATION_NAMES[from]}>${ROTATION_NAMES[to]}`;
+      if (type === 'I') {
+        return KICKS90.I[key] || [[0, 0]];
+      }
+      return KICKS90.JLSTZ[key] || [[0, 0]];
+    }
+
+    function get180KickTests(type, from, to) {
+      const key = `${ROTATION_NAMES[from]}>${ROTATION_NAMES[to]}`;
+      const table = kicks180[type];
+      let kicks = table && table[key];
+      if (!kicks || !kicks.length) {
+        return [[0, 0]];
+      }
+      if (
+        options.blockJLDownkickOn90to270 &&
+        (type === 'J' || type === 'L') &&
+        ((from === 1 && to === 3) || (from === 3 && to === 1))
+      ) {
+        const filtered = kicks.filter(([dx, dy]) => dy <= 0);
+        if (filtered.length) {
+          kicks = filtered;
+        }
+      }
+      return kicks;
+    }
+
+    function applyRotation(piece, candidate) {
+      piece.x = candidate.x;
+      piece.y = candidate.y;
+      piece.rot = candidate.rot & 3;
+    }
+
+    function tryRotate90Mutable(piece, dirCW, board) {
+      const from = piece.rot & 3;
+      const to = (from + (dirCW ? 1 : 3)) & 3;
+      if (piece.type === 'O') {
+        const adjust = O_ORIGIN_OFFSETS;
+        const candidate = {
+          type: piece.type,
+          x: piece.x + adjust[from][0] - adjust[to][0],
+          y: piece.y + adjust[from][1] - adjust[to][1],
+          rot: to
+        };
+        if (canPlace(candidate, board)) {
+          applyRotation(piece, candidate);
+          return true;
+        }
+        return false;
+      }
+      const kicks = get90KickTests(piece.type, from, to);
+      for (let i = 0; i < kicks.length; i++) {
+        const dx = kicks[i][0];
+        const dy = kicks[i][1];
+        const candidate = { type: piece.type, x: piece.x + dx, y: piece.y + dy, rot: to };
+        if (canPlace(candidate, board)) {
+          applyRotation(piece, candidate);
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function tryRotate180Mutable(piece, board) {
+      const from = piece.rot & 3;
+      const to = (from + 2) & 3;
+      if (piece.type === 'O') {
+        const adjust = O_ORIGIN_OFFSETS;
+        const candidate = {
+          type: piece.type,
+          x: piece.x + adjust[from][0] - adjust[to][0],
+          y: piece.y + adjust[from][1] - adjust[to][1],
+          rot: to
+        };
+        if (canPlace(candidate, board)) {
+          applyRotation(piece, candidate);
+          return true;
+        }
+        return false;
+      }
+
+      const baseCandidate = { type: piece.type, x: piece.x, y: piece.y, rot: to };
+      if (canPlace(baseCandidate, board)) {
+        applyRotation(piece, baseCandidate);
+        return true;
+      }
+
+      const kicks = get180KickTests(piece.type, from, to);
+      for (let i = 0; i < kicks.length; i++) {
+        const dx = kicks[i][0];
+        const dy = kicks[i][1];
+        if (dx === 0 && dy === 0) continue;
+        const candidate = { type: piece.type, x: piece.x + dx, y: piece.y + dy, rot: to };
+        if (canPlace(candidate, board)) {
+          applyRotation(piece, candidate);
+          return true;
+        }
+      }
+
+      const cwFallback = { type: piece.type, x: piece.x, y: piece.y, rot: piece.rot & 3 };
+      if (tryRotate90Mutable(cwFallback, true, board) && tryRotate90Mutable(cwFallback, true, board)) {
+        applyRotation(piece, cwFallback);
+        return true;
+      }
+
+      const ccwFallback = { type: piece.type, x: piece.x, y: piece.y, rot: piece.rot & 3 };
+      if (tryRotate90Mutable(ccwFallback, false, board) && tryRotate90Mutable(ccwFallback, false, board)) {
+        applyRotation(piece, ccwFallback);
+        return true;
+      }
+
+      return false;
+    }
+
+    function spawnPiece(type, board) {
+      const center = Math.floor(board.width / 2);
+      const spawnY = type === 'I' ? -1 : -2;
+      let spawnX;
+      if (type === 'I' || type === 'O') {
+        // Center the I and O pieces on spawn.
+        spawnX = center - 1;
+      } else {
+        // Lean the remaining pieces one column to the left of absolute center.
+        spawnX = center - 1;
+      }
+      return { type, x: spawnX, y: spawnY, rot: 0 };
+    }
+
+    function set180Kickset(newKickset) {
+      kicks180 = mergeKicksets(DEFAULT_180_KICKS, newKickset);
+    }
+
+    const api = {
+      spawnPiece,
+      getCells,
+      canPlace,
+      tryRotateCW(piece, board) {
+        return tryRotate90Mutable(piece, true, board);
+      },
+      tryRotateCCW(piece, board) {
+        return tryRotate90Mutable(piece, false, board);
+      },
+      tryRotate180(piece, board) {
+        return tryRotate180Mutable(piece, board);
+      },
+      set180Kickset,
+      options,
+      KICKS90
+    };
+
+    Object.defineProperty(api, 'KICKS180', {
+      enumerable: true,
+      get() {
+        return kicks180;
+      }
+    });
+
+    window.SRS = api;
+
+    if (window.DEBUG_SRS) {
+      const debugBoard = {
+        width: 10,
+        height: 40,
+        isEmpty(x, y) {
+          if (x < 0 || x >= this.width) return false;
+          if (y >= this.height) return false;
+          return true;
+        }
+      };
+
+      const tPiece = { type: 'T', x: 0, y: 0, rot: 0 };
+      console.log('[DEBUG_SRS] T near wall rotate CW:', window.SRS.tryRotateCW(tPiece, debugBoard), tPiece);
+
+      const iPiece = { type: 'I', x: 0, y: 1, rot: 0 };
+      console.log('[DEBUG_SRS] I near wall rotate CW:', window.SRS.tryRotateCW(iPiece, debugBoard), iPiece);
+
+      const lPiece = { type: 'L', x: 0, y: 0, rot: 1 };
+      console.log('[DEBUG_SRS] L 180 kick (R>L):', window.SRS.tryRotate180(lPiece, debugBoard), lPiece);
+    }
+  })();
+
 const i18n = {
   ru: {
     menu: {
@@ -633,8 +992,8 @@ class Board {
     const perfectClear = cleared > 0 && this.grid.every(row => row.every(v => !v));
     return { lines: cleared, perfectClear };
   }
-  getVisible() {
-    return this.grid.slice(this.hidden);
+  getSnapshot() {
+    return this.grid.map(row => row.slice());
   }
 }
 
@@ -986,12 +1345,26 @@ class Game {
   }
   lockPiece() {
     if (!this.active) return;
+    const placedCells = this.active.cells();
     this.board.place(this.active);
+    const toppedOut = placedCells.some(cell => cell.y < 0);
+    this.stats.addPiece();
+    if (toppedOut) {
+      this.combo = -1;
+      this.lastClear = null;
+      this.active = null;
+      this.holdUsed = false;
+      this.lockTimer = 0;
+      this.fallAcc = 0;
+      this.softDrop = false;
+      this.areTimer = 0;
+      this.finish();
+      return;
+    }
     const spinResult = this.evaluateSpin(this.active);
     const clear = this.board.clearLines();
     const lines = clear.lines;
     const perfectClear = clear.perfectClear;
-    this.stats.addPiece();
     let attack = 0;
     if (lines > 0) {
       this.combo += 1;
@@ -1079,7 +1452,7 @@ class Game {
     return { time: snap.time, apm: snap.apm, pps: snap.pps, lines: snap.lines };
   }
   getRenderState() {
-    const grid = this.board.getVisible();
+    const grid = this.board.getSnapshot();
     const active = this.active ? this.active.clone() : null;
     const ghost = active ? this.ghostCells(active) : null;
     return {
@@ -1089,12 +1462,11 @@ class Game {
       hold: this.holdPiece,
       queue: this.queue.slice(0, this.config.previewCount),
       stats: this.stats.snapshot(),
-      state: this.state,
-      hidden: this.board.hidden
+      state: this.state
     };
   }
   getNetworkState() {
-    const matrix = this.board.getVisible().map(row => row.map(cell => cell));
+    const matrix = this.board.getSnapshot();
     const active = this.active
       ? {
           type: this.active.type,
@@ -1131,18 +1503,39 @@ class BoardSnapshotRenderer {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.width = config.boardWidth;
-    this.height = config.boardHeight;
     this.blockSize = Math.floor(canvas.width / this.width);
+    this.baseRows = config.boardHeight + (config.hiddenRows || 0);
+    this.totalRows = this.baseRows;
+    this.ensureCanvasHeight(this.totalRows);
+  }
+  ensureCanvasHeight(rows) {
+    if (rows <= 0) return;
+    const targetRows = Math.max(rows, this.baseRows);
+    const requiredHeight = targetRows * this.blockSize;
+    if (this.canvas.height !== requiredHeight) {
+      this.canvas.height = requiredHeight;
+    }
+    const cssHeight = `${requiredHeight}px`;
+    if (this.canvas.style.height !== cssHeight) {
+      this.canvas.style.height = cssHeight;
+    }
+    this.totalRows = targetRows;
   }
   clear() {
     this.ctx.fillStyle = '#050a18';
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
   }
   render(snapshot) {
+    const matrix = snapshot && Array.isArray(snapshot.matrix) ? snapshot.matrix : [];
+    if (matrix.length > 0) {
+      this.ensureCanvasHeight(matrix.length);
+    } else {
+      this.ensureCanvasHeight(this.baseRows);
+    }
     this.clear();
     if (!snapshot) return;
-    const matrix = snapshot.matrix || [];
-    for (let y = 0; y < Math.min(this.height, matrix.length); y++) {
+    const rows = this.totalRows;
+    for (let y = 0; y < rows; y++) {
       const row = matrix[y] || [];
       for (let x = 0; x < this.width; x++) {
         const cell = row[x];
@@ -1158,9 +1551,10 @@ class BoardSnapshotRenderer {
     }
   }
   drawCells(cells, color) {
+    if (!Array.isArray(cells)) return;
     for (const cell of cells) {
       if (typeof cell.x !== 'number' || typeof cell.y !== 'number') continue;
-      if (cell.y < 0 || cell.y >= this.height) continue;
+      if (cell.y < 0 || cell.y >= this.totalRows) continue;
       if (cell.x < 0 || cell.x >= this.width) continue;
       this.drawBlock(cell.x, cell.y, color);
     }
@@ -1175,12 +1569,29 @@ class BoardSnapshotRenderer {
 
 class Renderer {
   constructor(elements) {
-    this.boardCtx = elements.board.getContext('2d');
+    this.boardCanvas = elements.board;
+    this.boardCtx = this.boardCanvas.getContext('2d');
     this.holdCtx = elements.hold.getContext('2d');
     this.nextCtx = elements.next.getContext('2d');
     this.hud = elements.hud;
     this.config = elements.config;
-    this.blockSize = Math.floor(elements.board.width / this.config.boardWidth);
+    this.cols = this.config.boardWidth;
+    this.blockSize = Math.floor(this.boardCanvas.width / this.cols);
+    this.baseRows = this.config.boardHeight + (this.config.hiddenRows || 0);
+    this.ensureBoardCanvasHeight(this.baseRows);
+  }
+  ensureBoardCanvasHeight(rows) {
+    if (rows <= 0) return;
+    const targetRows = Math.max(rows, this.baseRows);
+    const requiredHeight = targetRows * this.blockSize;
+    if (this.boardCanvas.height !== requiredHeight) {
+      this.boardCanvas.height = requiredHeight;
+    }
+    const cssHeight = `${requiredHeight}px`;
+    if (this.boardCanvas.style.height !== cssHeight) {
+      this.boardCanvas.style.height = cssHeight;
+    }
+    this.currentRows = targetRows;
   }
   render(game) {
     const state = game.getRenderState();
@@ -1192,28 +1603,35 @@ class Renderer {
   drawBoard(state) {
     const ctx = this.boardCtx;
     const cell = this.blockSize;
+    const rows = state.grid.length;
+    this.ensureBoardCanvasHeight(rows);
+    const totalRows = this.currentRows || rows;
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     ctx.fillStyle = '#0b1324';
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-    for (let y = 0; y < this.config.boardHeight; y++) {
-      for (let x = 0; x < this.config.boardWidth; x++) {
+    for (let y = 0; y < totalRows; y++) {
+      for (let x = 0; x < this.cols; x++) {
         ctx.strokeRect(x * cell, y * cell, cell, cell);
       }
     }
     const drawCells = (cells, color, alpha = 1) => {
+      if (!Array.isArray(cells)) return;
       ctx.fillStyle = color;
       ctx.globalAlpha = alpha;
       for (const c of cells) {
-        const vy = c.y - state.hidden;
-        if (vy < 0 || vy >= this.config.boardHeight) continue;
-        ctx.fillRect(c.x * cell, vy * cell, cell, cell);
+        if (!c) continue;
+        if (c.y < 0 || c.y >= totalRows) continue;
+        if (c.x < 0 || c.x >= this.cols) continue;
+        ctx.fillRect(c.x * cell, c.y * cell, cell, cell);
       }
       ctx.globalAlpha = 1;
     };
-    for (let y = 0; y < state.grid.length; y++) {
-      for (let x = 0; x < state.grid[y].length; x++) {
-        const type = state.grid[y][x];
+    for (let y = 0; y < totalRows; y++) {
+      const row = state.grid[y] || [];
+      const cols = Math.min(row.length, this.cols);
+      for (let x = 0; x < cols; x++) {
+        const type = row[x];
         if (type) {
           ctx.fillStyle = COLORS[type];
           ctx.fillRect(x * cell, y * cell, cell, cell);
