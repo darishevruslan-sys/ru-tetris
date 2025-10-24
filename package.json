@@ -4,4 +4,9 @@
   "private": true,
   "scripts": {},
   "license": "UNLICENSED"
+  "name": "ru-tetris",
+  "version": "1.0.0",
+  "dependencies": {
+    "@upstash/redis": "^1.28.4"
+}
 }
