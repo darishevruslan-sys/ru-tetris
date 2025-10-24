@@ -1,15 +1,25 @@
 const { joinRoom } = require("./_rooms.js");
 
+function readBody(req) {
+  if (typeof req.body === "string") {
+    try {
+      return JSON.parse(req.body);
+    } catch (e) {
+      return {};
+    }
+  } else if (req.body && typeof req.body === "object") {
+    return req.body;
+  }
+  return {};
+}
+
 module.exports = async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).json({ error: "POST only" });
     return;
   }
 
-  let body = {};
-  try {
-    body = JSON.parse(req.body || "{}");
-  } catch (e) {}
+  const body = readBody(req);
 
   const { roomCode } = body;
   let { playerId } = body;
