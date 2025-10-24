@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>RU Tetris Sprint 40L</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <div id="mainMenu" class="screen active">
+    <div class="logo">RU Tetris</div>
+    <div class="menu-buttons">
+      <button id="menuPlayBtn"></button>
+      <button id="menuMatchBtn"></button>
+      <button id="menuSettingsBtn"></button>
+      <button id="menuLoginBtn"></button>
+    </div>
+    <div class="info-card" id="menuHint"></div>
+  </div>
+
+  <div id="gameScreen" class="screen">
+    <div class="top-bar">
+      <div class="top-actions">
+        <button id="gameBackBtn"></button>
+      </div>
+      <div class="stats">
+        <div>LINES</div><div class="hud-text" id="linesVal">0</div>
+        <div>TIME</div><div class="hud-text" id="timeVal">00:00.00</div>
+        <div>APM</div><div class="hud-text" id="apmVal">0.00</div>
+        <div>PPS</div><div class="hud-text" id="ppsVal">0.00</div>
+      </div>
+    </div>
+    <div class="playfield">
+      <div class="panel">
+        <div class="panel-title">HOLD</div>
+        <canvas id="holdCanvas" width="140" height="140"></canvas>
+      </div>
+      <canvas id="boardCanvas" width="280" height="616"></canvas>
+      <div class="panel">
+        <div class="panel-title">NEXT</div>
+        <canvas id="nextCanvas" width="140" height="420"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div id="settingsScreen" class="screen">
+    <div class="logo" id="settingsTitle"></div>
+    <div class="helper-text" id="settingsHint"></div>
+    <div class="settings-list" id="settingsList"></div>
+    <div class="top-actions">
+      <button id="settingsBackBtn"></button>
+    </div>
+  </div>
+
+  <div id="matchScreen" class="screen">
+    <div class="logo" id="matchTitle"></div>
+    <div class="match-card">
+      <div class="match-form" id="matchSetup">
+        <div class="match-status" id="matchDescription"></div>
+        <div class="match-form-row">
+          <input id="roomCodeInput" class="match-input" type="text" maxlength="8">
+          <button id="joinRoomBtn"></button>
+        </div>
+        <div class="match-form-row">
+          <button id="createRoomBtn"></button>
+          <div class="match-room-code" id="matchRoomCode"></div>
+        </div>
+      </div>
+      <div class="match-boards hidden" id="matchBoards">
+        <div class="match-board">
+          <div class="panel-title" id="localBoardTitle"></div>
+          <canvas id="localMatchBoard" width="200" height="440"></canvas>
+          <div class="match-stats" id="localBoardStats"></div>
+        </div>
+        <div class="match-board">
+          <div class="panel-title" id="remoteBoardTitle"></div>
+          <canvas id="remoteMatchBoard" width="200" height="440"></canvas>
+          <div class="match-stats" id="remoteBoardStats"></div>
+        </div>
+      </div>
+    </div>
+    <button id="matchBackBtn"></button>
+  </div>
+
+  <div id="loginScreen" class="screen">
+    <div class="logo" id="loginTitle"></div>
+    <div class="placeholder-card" id="loginDescription"></div>
+    <button id="loginBackBtn"></button>
+  </div>
+</div>
+
+<div id="resultOverlay" class="overlay hidden">
+  <div class="title" id="resultTitle"></div>
+  <div id="resultStats"></div>
+  <button id="resultMenuBtn"></button>
+</div>
+
+<script src="main.js"></script>
+</body>
+</html>
