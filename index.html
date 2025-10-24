@@ -1001,12 +1001,26 @@ class Game {
   }
   lockPiece() {
     if (!this.active) return;
+    const placedCells = this.active.cells();
     this.board.place(this.active);
+    const toppedOut = placedCells.some(cell => cell.y < 0);
+    this.stats.addPiece();
+    if (toppedOut) {
+      this.combo = -1;
+      this.lastClear = null;
+      this.active = null;
+      this.holdUsed = false;
+      this.lockTimer = 0;
+      this.fallAcc = 0;
+      this.softDrop = false;
+      this.areTimer = 0;
+      this.finish();
+      return;
+    }
     const spinResult = this.evaluateSpin(this.active);
     const clear = this.board.clearLines();
     const lines = clear.lines;
     const perfectClear = clear.perfectClear;
-    this.stats.addPiece();
     let attack = 0;
     if (lines > 0) {
       this.combo += 1;
