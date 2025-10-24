@@ -643,6 +643,13 @@ class Board {
   getSnapshot() {
     return this.grid.map(row => row.slice());
   }
+  isToppedOut() {
+    for (let y = 0; y < this.hidden; y++) {
+      const row = this.grid[y];
+      if (row && row.some(v => v)) return true;
+    }
+    return false;
+  }
 }
 
 class StatsTracker {
@@ -1007,6 +1014,11 @@ class Game {
       attack += this.computeAttack(lines, spinResult, perfectClear);
     } else {
       this.combo = -1;
+    }
+    // Detect top-out: if any blocks remain in hidden rows after lock/clear
+    if (this.board.isToppedOut()) {
+      this.finish();
+      return;
     }
     if (attack > 0) this.stats.addAttack(attack);
     if (attack > 0 && this.multiplayerClient) {
