@@ -141,6 +141,194 @@ input::placeholder{color:#4f5a8c}
 
 <script>
 (() => {
+  // Super Rotation System (SRS) definition with wall kicks (Y-axis downwards).
+  (function initializeSRS() {
+    const ROTATION_NAMES = ['0', 'R', '2', 'L'];
+    const PIECE_SHAPES = {
+      T: [
+        [[-1, 0], [0, 0], [1, 0], [0, -1]],
+        [[0, -1], [0, 0], [0, 1], [1, 0]],
+        [[-1, 0], [0, 0], [1, 0], [0, 1]],
+        [[0, -1], [0, 0], [0, 1], [-1, 0]]
+      ],
+      L: [
+        [[-1, 0], [0, 0], [1, 0], [1, -1]],
+        [[0, -1], [0, 0], [0, 1], [1, 1]],
+        [[-1, 0], [0, 0], [1, 0], [-1, 1]],
+        [[0, -1], [0, 0], [0, 1], [-1, -1]]
+      ],
+      J: [
+        [[-1, 0], [0, 0], [1, 0], [-1, -1]],
+        [[0, -1], [0, 0], [0, 1], [1, -1]],
+        [[-1, 0], [0, 0], [1, 0], [1, 1]],
+        [[0, -1], [0, 0], [0, 1], [-1, 1]]
+      ],
+      S: [
+        [[-1, 0], [0, 0], [0, -1], [1, -1]],
+        [[0, -1], [0, 0], [1, 0], [1, 1]],
+        [[-1, 1], [0, 1], [0, 0], [1, 0]],
+        [[-1, -1], [-1, 0], [0, 0], [0, 1]]
+      ],
+      Z: [
+        [[-1, -1], [0, -1], [0, 0], [1, 0]],
+        [[1, -1], [1, 0], [0, 0], [0, 1]],
+        [[-1, 0], [0, 0], [0, 1], [1, 1]],
+        [[0, -1], [0, 0], [-1, 0], [-1, 1]]
+      ],
+      I: [
+        [[-1, 0], [0, 0], [1, 0], [2, 0]],
+        [[0, -1], [0, 0], [0, 1], [0, 2]],
+        [[-2, 0], [-1, 0], [0, 0], [1, 0]],
+        [[0, -2], [0, -1], [0, 0], [0, 1]]
+      ],
+      O: [
+        [[0, 0], [1, 0], [0, -1], [1, -1]],
+        [[0, 0], [1, 0], [0, -1], [1, -1]],
+        [[0, 0], [1, 0], [0, -1], [1, -1]],
+        [[0, 0], [1, 0], [0, -1], [1, -1]]
+      ]
+    };
+
+    const O_ORIGIN_OFFSETS = [[0, 0], [0, -1], [-1, -1], [-1, 0]];
+
+    // Kick tables already adjusted for Y-down coordinates.
+    const JLSTZ_KICKS = {
+      '0>R': [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],
+      'R>0': [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]],
+      'R>2': [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]],
+      '2>R': [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],
+      '2>L': [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]],
+      'L>2': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
+      'L>0': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
+      '0>L': [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]]
+    };
+
+    const I_KICKS = {
+      '0>R': [[0, 0], [-2, 0], [1, 0], [-2, 1], [1, -2]],
+      'R>0': [[0, 0], [2, 0], [-1, 0], [2, -1], [-1, 2]],
+      'R>2': [[0, 0], [-1, 0], [2, 0], [-1, -2], [2, 1]],
+      '2>R': [[0, 0], [1, 0], [-2, 0], [1, 2], [-2, -1]],
+      '2>L': [[0, 0], [2, 0], [-1, 0], [2, -1], [-1, 2]],
+      'L>2': [[0, 0], [-2, 0], [1, 0], [-2, 1], [1, -2]],
+      'L>0': [[0, 0], [1, 0], [-2, 0], [1, 2], [-2, -1]],
+      '0>L': [[0, 0], [-1, 0], [2, 0], [-1, -2], [2, 1]]
+    };
+
+    function getCells(piece) {
+      const shape = PIECE_SHAPES[piece.type];
+      if (!shape) return [];
+      const offsets = shape[piece.rot & 3];
+      return offsets.map(([dx, dy]) => [piece.x + dx, piece.y + dy]);
+    }
+
+    function canPlace(piece, board) {
+      const cells = getCells(piece);
+      for (let i = 0; i < cells.length; i++) {
+        const x = cells[i][0];
+        const y = cells[i][1];
+        if (x < 0 || x >= board.width) return false;
+        if (y >= board.height) return false;
+        if (y >= 0 && !board.isEmpty(x, y)) return false;
+      }
+      return true;
+    }
+
+    function getKickTests(type, from, to) {
+      const key = `${ROTATION_NAMES[from]}>${ROTATION_NAMES[to]}`;
+      if (type === 'I') return I_KICKS[key] || [[0, 0]];
+      return JLSTZ_KICKS[key] || [[0, 0]];
+    }
+
+    function tryRotate90(piece, dirCW, board) {
+      const from = piece.rot & 3;
+      const to = (from + (dirCW ? 1 : 3)) & 3;
+      if (piece.type === 'O') {
+        const adjust = O_ORIGIN_OFFSETS;
+        const newX = piece.x + adjust[from][0] - adjust[to][0];
+        const newY = piece.y + adjust[from][1] - adjust[to][1];
+        const candidate = { type: piece.type, x: newX, y: newY, rot: to };
+        if (canPlace(candidate, board)) {
+          piece.x = newX;
+          piece.y = newY;
+          piece.rot = to;
+          return true;
+        }
+        return false;
+      }
+      const kicks = getKickTests(piece.type, from, to);
+      for (let i = 0; i < kicks.length; i++) {
+        const dx = kicks[i][0];
+        const dy = kicks[i][1];
+        const candidate = { type: piece.type, x: piece.x + dx, y: piece.y + dy, rot: to };
+        if (canPlace(candidate, board)) {
+          piece.x = candidate.x;
+          piece.y = candidate.y;
+          piece.rot = to;
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function tryRotate180(piece, board) {
+      const original = { x: piece.x, y: piece.y, rot: piece.rot & 3 };
+      if (!tryRotate90(piece, true, board)) return false;
+      if (tryRotate90(piece, true, board)) return true;
+      piece.x = original.x;
+      piece.y = original.y;
+      piece.rot = original.rot;
+      return false;
+    }
+
+    function spawnPiece(type, board) {
+      const center = Math.floor(board.width / 2);
+      const spawnShape = PIECE_SHAPES[type] ? PIECE_SHAPES[type][0] : [[0, 0]];
+      let minDx = Infinity;
+      let maxDx = -Infinity;
+      for (let i = 0; i < spawnShape.length; i++) {
+        const dx = spawnShape[i][0];
+        if (dx < minDx) minDx = dx;
+        if (dx > maxDx) maxDx = dx;
+      }
+      if (!isFinite(minDx) || !isFinite(maxDx)) {
+        minDx = 0;
+        maxDx = 0;
+      }
+      const pieceWidth = maxDx - minDx + 1;
+      const spawnX = center - Math.floor(pieceWidth / 2) - minDx;
+      const spawnY = type === 'I' ? -1 : -2;
+      return { type, x: spawnX, y: spawnY, rot: 0 };
+    }
+
+    window.SRS = {
+      spawnPiece,
+      getCells,
+      canPlace,
+      tryRotateCW(piece, board) {
+        return tryRotate90(piece, true, board);
+      },
+      tryRotateCCW(piece, board) {
+        return tryRotate90(piece, false, board);
+      },
+      tryRotate180
+    };
+
+    if (window.DEBUG_SRS) {
+      const debugBoard = {
+        width: 10,
+        height: 20,
+        isEmpty(x, y) {
+          return x >= 0 && x < this.width && y >= 0 && y < this.height;
+        }
+      };
+      const tPiece = { type: 'T', x: 0, y: 0, rot: 0 };
+      console.log('[DEBUG_SRS] T near wall cells:', window.SRS.getCells(tPiece));
+      console.log('[DEBUG_SRS] T rotate CW success:', window.SRS.tryRotateCW(tPiece, debugBoard), tPiece);
+      const iPiece = { type: 'I', x: 0, y: 1, rot: 0 };
+      console.log('[DEBUG_SRS] I rotate CW success:', window.SRS.tryRotateCW(iPiece, debugBoard), iPiece);
+    }
+  })();
+
 const i18n = {
   ru: {
     menu: {
