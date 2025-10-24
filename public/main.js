@@ -595,6 +595,8 @@ class StatsTracker {
   }
 }
 
+const API_BASE = 'https://ru-tetris.vercel.app';
+
 class MultiplayerClient {
   constructor() {
     this.roomCode = null;
@@ -622,6 +624,10 @@ class MultiplayerClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload || {})
       });
+      if (!res.ok) {
+        console.warn('postJSON fail', url, res.status, await res.text());
+        return { ok: false };
+      }
       return res.json();
     } catch (err) {
       return { ok: false };
@@ -629,7 +635,7 @@ class MultiplayerClient {
   }
 
   async createRoom() {
-    const data = await this.postJSON('/api/room-create', { playerId: this.playerId });
+    const data = await this.postJSON(`${API_BASE}/api/room-create`, { playerId: this.playerId });
     if (!data || !data.ok) throw new Error('createRoom failed');
     this.roomCode = data.roomCode;
     this.playerId = data.you;
@@ -638,12 +644,11 @@ class MultiplayerClient {
     this.readyState = {};
     this.startSyncLoop();
     this.emitRoomInfo();
-    this.syncOnce();
     return data;
   }
 
   async joinRoom(roomCode) {
-    const data = await this.postJSON('/api/room-join', {
+    const data = await this.postJSON(`${API_BASE}/api/room-join`, {
       roomCode,
       playerId: this.playerId
     });
@@ -655,13 +660,12 @@ class MultiplayerClient {
     this.readyState = {};
     this.startSyncLoop();
     this.emitRoomInfo();
-    this.syncOnce();
     return data;
   }
 
   async setReady(isReady) {
     if (!this.roomCode || !this.playerId) return null;
-    const data = await this.postJSON('/api/room-ready', {
+    const data = await this.postJSON(`${API_BASE}/api/room-ready`, {
       roomCode: this.roomCode,
       playerId: this.playerId,
       ready: !!isReady
@@ -706,10 +710,10 @@ class MultiplayerClient {
 
   async syncOnce() {
     if (this.syncInFlight) return;
+    if (!this.roomCode || !this.playerId) return;
     this.syncInFlight = true;
     let resp = null;
     try {
-      if (!this.roomCode || !this.playerId) return;
       if (!window.__gameInstance) return;
 
       const snapshot = window.__gameInstance.getNetworkState
@@ -721,7 +725,7 @@ class MultiplayerClient {
       this.lastState = snapshot;
       const attackToSend = this.lastAttack || 0;
 
-      resp = await this.postJSON('/api/room-state', {
+      resp = await this.postJSON(`${API_BASE}/api/room-state`, {
         roomCode: this.roomCode,
         playerId: this.playerId,
         state: snapshot,
@@ -789,8 +793,11 @@ class MultiplayerClient {
 
   startSyncLoop() {
     this.stopSyncLoop();
+    this.syncOnce();
     this.syncTimer = setInterval(() => {
-      this.syncOnce();
+      if (this.roomCode && this.playerId) {
+        this.syncOnce();
+      }
     }, 300);
   }
 
