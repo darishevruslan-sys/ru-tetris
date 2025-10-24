@@ -508,52 +508,61 @@ const TETROMINO_SHAPES = {
     [[1, 0], [2, 0], [1, 1], [2, 1]]
   ]
 };
-const SRS_KICKS = {
-  JLSTZ: {
-    0: { 1: [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]], 3: [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]] },
-    1: { 0: [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]], 2: [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]] },
-    2: { 1: [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]], 3: [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]] },
-    3: { 0: [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]], 2: [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]] }
-  },
-  I: {
-    0: { 1: [[0, 0], [-2, 0], [1, 0], [-2, -1], [1, 2]], 3: [[0, 0], [-1, 0], [2, 0], [-1, 2], [2, -1]] },
-    1: { 0: [[0, 0], [2, 0], [-1, 0], [2, 1], [-1, -2]], 2: [[0, 0], [-1, 0], [2, 0], [-1, 2], [2, -1]] },
-    2: { 1: [[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]], 3: [[0, 0], [2, 0], [-1, 0], [2, 1], [-1, -2]] },
-    3: { 0: [[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]], 2: [[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]] }
-  },
-  O: {
-    0: { 1: [[0, 0]], 2: [[0, 0]], 3: [[0, 0]] },
-    1: { 0: [[0, 0]], 2: [[0, 0]], 3: [[0, 0]] },
-    2: { 0: [[0, 0]], 1: [[0, 0]], 3: [[0, 0]] },
-    3: { 0: [[0, 0]], 1: [[0, 0]], 2: [[0, 0]] }
+const JLSTZ_KICKS = {
+  '0>1': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
+  '1>0': [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]],
+
+  '1>2': [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]],
+  '2>1': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
+
+  '2>3': [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]],
+  '3>2': [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],
+
+  '3>0': [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],
+  '0>3': [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]]
+};
+
+const I_KICKS = {
+  '0>1': [[0, 0], [-2, 0], [1, 0], [-2, -1], [1, 2]],
+  '1>0': [[0, 0], [2, 0], [-1, 0], [2, 1], [-1, -2]],
+
+  '1>2': [[0, 0], [-1, 0], [2, 0], [-1, 2], [2, -1]],
+  '2>1': [[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]],
+
+  '2>3': [[0, 0], [2, 0], [-1, 0], [2, 1], [-1, -2]],
+  '3>2': [[0, 0], [-2, 0], [1, 0], [-2, -1], [1, 2]],
+
+  '3>0': [[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]],
+  '0>3': [[0, 0], [-1, 0], [2, 0], [-1, 2], [2, -1]]
+};
+
+const O_KICKS = {
+  '0>1': [[0, 0]],
+  '1>2': [[0, 0]],
+  '2>3': [[0, 0]],
+  '3>0': [[0, 0]],
+  '1>0': [[0, 0]],
+  '2>1': [[0, 0]],
+  '3>2': [[0, 0]],
+  '0>3': [[0, 0]]
+};
+
+function getKickTable(pieceType, fromState, toState) {
+  const key = `${fromState}>${toState}`;
+  if (pieceType === 'I') {
+    return I_KICKS[key] || [[0, 0]];
   }
-};
-const SRS_180 = {
-  JLSTZ: [
-    [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]],
-    [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]],
-    [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]],
-    [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]
-  ],
-  I: [
-    [[0, 0], [1, 0], [-1, 0], [2, 0], [-2, 0], [0, 1], [0, -1]],
-    [[0, 0], [0, 1], [0, -1], [1, 0], [-1, 0], [2, 0], [-2, 0]],
-    [[0, 0], [1, 0], [-1, 0], [2, 0], [-2, 0], [0, 1], [0, -1]],
-    [[0, 0], [0, 1], [0, -1], [1, 0], [-1, 0], [2, 0], [-2, 0]]
-  ],
-  O: [
-    [[0, 0]],
-    [[0, 0]],
-    [[0, 0]],
-    [[0, 0]]
-  ]
-};
+  if (pieceType === 'O') {
+    return O_KICKS[key] || [[0, 0]];
+  }
+  return JLSTZ_KICKS[key] || [[0, 0]];
+}
 const COMBO_ATTACK = [0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5];
 
 class Tetromino {
   constructor(type) {
     this.type = type;
-    this.rotation = 0;
+    this.rotationState = 0;
     const spawn = SPAWN_POS[type] || SPAWN_POS.default;
     this.x = spawn.x;
     this.y = spawn.y;
@@ -561,14 +570,19 @@ class Tetromino {
   }
   clone() {
     const t = new Tetromino(this.type);
-    t.rotation = this.rotation;
+    t.rotationState = this.rotationState;
     t.x = this.x;
     t.y = this.y;
     t.spinState = this.spinState ? { ...this.spinState } : null;
     return t;
   }
-  cells(rot = this.rotation, x = this.x, y = this.y) {
-    return TETROMINO_SHAPES[this.type][rot].map(([dx, dy]) => ({ x: x + dx, y: y + dy }));
+  getShapeAtRotation(state = this.rotationState) {
+    const shapes = TETROMINO_SHAPES[this.type];
+    return shapes[state] || shapes[0];
+  }
+  cells(rot = this.rotationState, x = this.x, y = this.y) {
+    const shape = this.getShapeAtRotation(rot);
+    return shape.map(([dx, dy]) => ({ x: x + dx, y: y + dy }));
   }
 }
 class Board {
@@ -590,8 +604,16 @@ class Board {
     if (!this.isInside(x, y)) return false;
     return this.grid[y][x] === null;
   }
-  isValid(piece, x = piece.x, y = piece.y, rot = piece.rotation) {
-    return piece.cells(rot, x, y).every(cell => cell.x >= 0 && cell.x < this.width && cell.y < this.height && this.isEmpty(cell.x, cell.y));
+  canPlace(shape, x, y) {
+    return shape.every(([dx, dy]) => {
+      const nx = x + dx;
+      const ny = y + dy;
+      return nx >= 0 && nx < this.width && ny < this.height && this.isEmpty(nx, ny);
+    });
+  }
+  isValid(piece, x = piece.x, y = piece.y, rot = piece.rotationState) {
+    const shape = piece.getShapeAtRotation(rot);
+    return this.canPlace(shape, x, y);
   }
   place(piece) {
     for (const cell of piece.cells()) {
@@ -848,7 +870,7 @@ class Game {
   }
   createPiece(type) {
     const piece = new Tetromino(type);
-    piece.rotation = 0;
+    piece.rotationState = 0;
     piece.spinState = null;
     return piece;
   }
@@ -915,35 +937,52 @@ class Game {
   canFall() {
     return this.active && this.board.isValid(this.active, this.active.x, this.active.y + 1);
   }
-  rotate(dir) {
-    if (this.state !== 'running' || !this.active) return;
-    const delta = dir === 'ccw' ? -1 : dir === 'cw' ? 1 : 2;
-    const from = this.active.rotation;
-    const to = (from + delta + 4) % 4;
-    const kicks = this.getKicks(this.active.type, from, to, dir);
+  tryRotate(dir) {
+    if (this.state !== 'running' || !this.active) return false;
+    const piece = this.active;
+    const from = piece.rotationState;
+    const to = (from + dir + 4) % 4;
+    const rotatedShape = piece.getShapeAtRotation(to);
+    const kicks = dir === 2 ? [[0, 0]] : getKickTable(piece.type, from, to);
+    const rotationType = dir === 2 ? '180' : dir === 1 ? 'cw' : 'ccw';
     for (let i = 0; i < kicks.length; i++) {
-      const [dx, dy] = kicks[i];
-      if (this.board.isValid(this.active, this.active.x + dx, this.active.y + dy, to)) {
-        this.active.x += dx;
-        this.active.y += dy;
-        this.active.rotation = to;
-        this.active.spinState = { used: true, kick: i, type: dir };
+      const [kx, ky] = kicks[i];
+      const testX = piece.x + kx;
+      const testY = piece.y + ky;
+      if (this.board.canPlace(rotatedShape, testX, testY)) {
+        piece.rotationState = to;
+        piece.x = testX;
+        piece.y = testY;
+        piece.spinState = { used: true, kick: i, type: rotationType };
         this.lockTimer = 0;
         return true;
       }
     }
     return false;
   }
+  rotateCW() {
+    return this.tryRotate(1);
+  }
+  rotateCCW() {
+    return this.tryRotate(-1);
+  }
+  rotate180() {
+    return this.tryRotate(2);
+  }
+  rotate(dir) {
+    switch (dir) {
+      case 'cw':
+        return this.rotateCW();
+      case 'ccw':
+        return this.rotateCCW();
+      case '180':
+        return this.rotate180();
+      default:
+        return false;
+    }
+  }
   resetSpin() {
     if (this.active) this.active.spinState = null;
-  }
-  getKicks(type, from, to, dir) {
-    if (dir === '180') {
-      const group = type === 'I' ? SRS_180.I : type === 'O' ? SRS_180.O : SRS_180.JLSTZ;
-      return group[from];
-    }
-    const table = type === 'I' ? SRS_KICKS.I : type === 'O' ? SRS_KICKS.O : SRS_KICKS.JLSTZ;
-    return (table[from] && table[from][to]) || [[0, 0]];
   }
   lockPiece() {
     if (!this.active) return;
@@ -1059,7 +1098,7 @@ class Game {
     const active = this.active
       ? {
           type: this.active.type,
-          rotation: this.active.rotation,
+          rotation: this.active.rotationState,
           x: this.active.x,
           y: this.active.y,
           cells: this.active.cells().map(cell => ({ x: cell.x, y: cell.y }))
@@ -1281,15 +1320,15 @@ class InputManager {
         break;
       case 'rotateCW':
         if (e.repeat) return;
-        this.game.rotate('cw');
+        this.game.rotateCW();
         break;
       case 'rotateCCW':
         if (e.repeat) return;
-        this.game.rotate('ccw');
+        this.game.rotateCCW();
         break;
       case 'rotate180':
         if (e.repeat) return;
-        this.game.rotate('180');
+        this.game.rotate180();
         break;
       case 'hold':
         if (e.repeat) return;
