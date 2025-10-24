@@ -1,145 +1,3 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="UTF-8">
-<title>RU Tetris Sprint 40L</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:#05070f;color:#e4e7ff;font-family:"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
-button{background:#1b2440;color:#f8f9ff;border:none;padding:12px 24px;border-radius:8px;font-size:16px;cursor:pointer;transition:background .2s;font-weight:600}
-button:hover{background:#27335d}
-.app{width:100%;max-width:1080px;display:flex;flex-direction:column;gap:24px}
-.screen{display:none;flex-direction:column;align-items:center;gap:24px}
-.screen.active{display:flex}
-.logo{font-size:36px;letter-spacing:6px;text-transform:uppercase;color:#9aa4d9;text-align:center}
-.menu-buttons{display:flex;flex-direction:column;gap:16px;width:100%;max-width:320px}
-.menu-buttons button{width:100%}
-.info-card{background:#0b1020;border-radius:12px;padding:24px;text-align:center;color:#9aa4d9;max-width:420px;line-height:1.5}
-.top-bar{display:flex;gap:20px;align-items:center;width:100%;justify-content:space-between}
-.top-actions{display:flex;gap:12px;align-items:center}
-.stats{display:grid;grid-template-columns:repeat(2,auto);gap:6px 20px;font-size:14px}
-.hud-text{color:#aab4dd}
-.playfield{display:flex;gap:16px;align-items:flex-start;width:100%;justify-content:center}
-.panel{background:#0b1020;border-radius:12px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:12px;min-width:140px}
-.panel-title{font-size:14px;letter-spacing:2px;color:#8a94c9}
-canvas{background:#0f1628;border-radius:10px}
-#boardCanvas{border:2px solid #1d2745}
-.overlay{position:fixed;inset:0;background:rgba(5,7,15,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;font-size:18px;text-align:center;z-index:10}
-.overlay.hidden{display:none}
-.overlay .title{font-size:28px;letter-spacing:4px}
-.overlay button{font-size:18px}
-.settings-list{width:100%;max-width:520px;display:flex;flex-direction:column;gap:12px}
-.settings-row{display:flex;align-items:center;justify-content:space-between;background:#0b1020;padding:16px;border-radius:10px}
-.settings-row.listening{outline:2px solid #5dd9ff}
-.settings-row .action-label{font-size:16px}
-.settings-row button{min-width:160px}
-.helper-text{color:#7c86b9;font-size:14px;text-align:center;line-height:1.5}
-.placeholder-card{background:#0b1020;padding:24px;border-radius:12px;color:#9aa4d9;text-align:center;max-width:420px;line-height:1.6}
-.match-card{background:#0b1020;padding:24px;border-radius:12px;color:#c7cff6;display:flex;flex-direction:column;gap:20px;width:100%;max-width:720px}
-.match-form{display:flex;flex-direction:column;gap:12px}
-.match-form-row{display:flex;gap:12px;flex-wrap:wrap}
-.match-input{flex:1;min-width:180px;padding:12px 16px;border-radius:8px;border:1px solid #1d2745;background:#050a18;color:#e4e7ff;font-size:16px}
-.match-status{color:#7c86b9;font-size:14px;line-height:1.4}
-.match-room-code{font-size:16px;color:#9aa4d9}
-.match-boards{display:flex;gap:24px;justify-content:center;flex-wrap:wrap}
-.match-boards.hidden{display:none}
-.match-board{display:flex;flex-direction:column;gap:10px;align-items:center}
-.match-board canvas{border:2px solid #1d2745;background:#0f1628;border-radius:10px}
-.match-stats{font-size:14px;color:#7c86b9;text-align:center;min-height:32px}
-input::placeholder{color:#4f5a8c}
-</style>
-</head>
-<body>
-<div class="app">
-  <div id="mainMenu" class="screen active">
-    <div class="logo">RU Tetris</div>
-    <div class="menu-buttons">
-      <button id="menuPlayBtn"></button>
-      <button id="menuMatchBtn"></button>
-      <button id="menuSettingsBtn"></button>
-      <button id="menuLoginBtn"></button>
-    </div>
-    <div class="info-card" id="menuHint"></div>
-  </div>
-
-  <div id="gameScreen" class="screen">
-    <div class="top-bar">
-      <div class="top-actions">
-        <button id="gameBackBtn"></button>
-      </div>
-      <div class="stats">
-        <div>LINES</div><div class="hud-text" id="linesVal">0</div>
-        <div>TIME</div><div class="hud-text" id="timeVal">00:00.00</div>
-        <div>APM</div><div class="hud-text" id="apmVal">0.00</div>
-        <div>PPS</div><div class="hud-text" id="ppsVal">0.00</div>
-      </div>
-    </div>
-    <div class="playfield">
-      <div class="panel">
-        <div class="panel-title">HOLD</div>
-        <canvas id="holdCanvas" width="140" height="140"></canvas>
-      </div>
-      <canvas id="boardCanvas" width="280" height="616"></canvas>
-      <div class="panel">
-        <div class="panel-title">NEXT</div>
-        <canvas id="nextCanvas" width="140" height="420"></canvas>
-      </div>
-    </div>
-  </div>
-
-  <div id="settingsScreen" class="screen">
-    <div class="logo" id="settingsTitle"></div>
-    <div class="helper-text" id="settingsHint"></div>
-    <div class="settings-list" id="settingsList"></div>
-    <div class="top-actions">
-      <button id="settingsBackBtn"></button>
-    </div>
-  </div>
-
-  <div id="matchScreen" class="screen">
-    <div class="logo" id="matchTitle"></div>
-    <div class="match-card">
-      <div class="match-form" id="matchSetup">
-        <div class="match-status" id="matchDescription"></div>
-        <div class="match-form-row">
-          <input id="roomCodeInput" class="match-input" type="text" maxlength="8">
-          <button id="joinRoomBtn"></button>
-        </div>
-        <div class="match-form-row">
-          <button id="createRoomBtn"></button>
-          <div class="match-room-code" id="matchRoomCode"></div>
-        </div>
-      </div>
-      <div class="match-boards hidden" id="matchBoards">
-        <div class="match-board">
-          <div class="panel-title" id="localBoardTitle"></div>
-          <canvas id="localMatchBoard" width="200" height="440"></canvas>
-          <div class="match-stats" id="localBoardStats"></div>
-        </div>
-        <div class="match-board">
-          <div class="panel-title" id="remoteBoardTitle"></div>
-          <canvas id="remoteMatchBoard" width="200" height="440"></canvas>
-          <div class="match-stats" id="remoteBoardStats"></div>
-        </div>
-      </div>
-    </div>
-    <button id="matchBackBtn"></button>
-  </div>
-
-  <div id="loginScreen" class="screen">
-    <div class="logo" id="loginTitle"></div>
-    <div class="placeholder-card" id="loginDescription"></div>
-    <button id="loginBackBtn"></button>
-  </div>
-</div>
-
-<div id="resultOverlay" class="overlay hidden">
-  <div class="title" id="resultTitle"></div>
-  <div id="resultStats"></div>
-  <button id="resultMenuBtn"></button>
-</div>
-
-<script>
 (() => {
 
 const i18n = {
@@ -715,103 +573,111 @@ class StatsTracker {
 
 class MultiplayerClient {
   constructor() {
+    this.roomCode = null;
+    this.playerId = null;
     this.remoteStateHandler = () => {};
     this.garbageHandler = () => {};
-    this.mockTimer = null;
-    this.mockConfig = { width: 10, height: 20 };
+    this.syncTimer = null;
   }
+
   configure(config) {
-    if (config) {
-      this.mockConfig = {
-        width: config.boardWidth ?? this.mockConfig.width,
-        height: config.boardHeight ?? this.mockConfig.height
-      };
+    this.config = config || {};
+  }
+
+  async postJSON(url, payload) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      });
+      return res.json();
+    } catch (err) {
+      return { ok: false };
     }
   }
-  createRoom(code) {
-    this.stopMock();
-    // TODO: реальная синхронизация состояний через WebSocket
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        this.startMock();
-        resolve({ code });
-      }, 150);
-    });
+
+  async createRoom() {
+    const data = await this.postJSON('/api/room-create', { playerId: this.playerId });
+    if (!data || !data.ok) throw new Error('createRoom failed');
+    this.roomCode = data.roomCode;
+    this.playerId = data.you;
+    this.startSyncLoop();
+    return data;
   }
-  joinRoom(code) {
-    this.stopMock();
-    // TODO: реальная синхронизация состояний через WebSocket
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        this.startMock();
-        resolve({ code });
-      }, 150);
+
+  async joinRoom(roomCode) {
+    const data = await this.postJSON('/api/room-join', {
+      roomCode,
+      playerId: this.playerId
     });
+    if (!data || !data.ok) throw new Error('joinRoom failed');
+    this.roomCode = data.roomCode;
+    this.playerId = data.you;
+    this.startSyncLoop();
+    return data;
   }
+
   sendState(state) {
-    // TODO: реальная синхронизация состояний через WebSocket
     this.lastState = state;
   }
+
+  sendStateNow(gameState) {
+    if (!this.roomCode || !this.playerId) return Promise.resolve(null);
+    return this.postJSON('/api/room-state', {
+      roomCode: this.roomCode,
+      playerId: this.playerId,
+      state: gameState
+    })
+      .then((resp) => {
+        if (!resp || !resp.ok) return resp;
+        let firstOpponent = null;
+        for (const key in resp.opponents) {
+          if (Object.prototype.hasOwnProperty.call(resp.opponents, key)) {
+            firstOpponent = resp.opponents[key];
+            break;
+          }
+        }
+        if (typeof this.remoteStateHandler === 'function') {
+          if (firstOpponent) {
+            this.remoteStateHandler(firstOpponent);
+          } else {
+            this.remoteStateHandler(null);
+          }
+        }
+        return resp;
+      })
+      .catch(() => null);
+  }
+
   onRemoteState(callback) {
     this.remoteStateHandler = typeof callback === 'function' ? callback : () => {};
   }
+
   onGarbage(callback) {
     this.garbageHandler = typeof callback === 'function' ? callback : () => {};
   }
+
+  startSyncLoop() {
+    this.stopSyncLoop();
+    this.syncTimer = setInterval(() => {
+      if (!window.__gameInstance) return;
+      const snapshot = window.__gameInstance.getNetworkState();
+      this.sendState(snapshot);
+      this.sendStateNow(snapshot);
+    }, 300);
+  }
+
+  stopSyncLoop() {
+    if (this.syncTimer) {
+      clearInterval(this.syncTimer);
+      this.syncTimer = null;
+    }
+  }
+
   disconnect() {
-    this.stopMock();
-  }
-  startMock() {
-    this.stopMock();
-    if (typeof this.remoteStateHandler === 'function') {
-      this.remoteStateHandler(this.generateMockState());
-    }
-    this.mockTimer = setInterval(() => {
-      if (typeof this.remoteStateHandler === 'function') {
-        this.remoteStateHandler(this.generateMockState());
-      }
-    }, 2000);
-  }
-  stopMock() {
-    if (this.mockTimer) {
-      clearInterval(this.mockTimer);
-      this.mockTimer = null;
-    }
-  }
-  generateMockState() {
-    const width = this.mockConfig.width;
-    const height = this.mockConfig.height;
-    const matrix = Array.from({ length: height }, () => Array(width).fill(null));
-    for (let x = 0; x < width; x++) {
-      const columnHeight = Math.floor(Math.random() * Math.min(height, 6));
-      for (let y = height - 1; y >= height - columnHeight; y--) {
-        matrix[y][x] = BAG[(x + y) % BAG.length];
-      }
-    }
-    const activeType = BAG[Math.floor(Math.random() * BAG.length)];
-    const spawn = SPAWN_POS[activeType] || SPAWN_POS.default;
-    const activeCells = TETROMINO_SHAPES[activeType][0].map(([dx, dy]) => ({
-      x: spawn.x + dx,
-      y: spawn.y + dy
-    }));
-    const time = Math.random() * 120;
-    const pieces = Math.floor(time * 1.5);
-    const attack = Math.floor(Math.random() * 40);
-    const lines = Math.floor(Math.random() * 40);
-    return {
-      matrix,
-      active: { type: activeType, rotation: 0, x: spawn.x, y: spawn.y, cells: activeCells },
-      hold: null,
-      queue: BAG.slice(0, 5),
-      stats: {
-        lines,
-        time,
-        attack,
-        pieces,
-        apm: time > 0 ? attack / (time / 60) : 0,
-        pps: time > 0 ? pieces / time : 0
-      }
-    };
+    this.stopSyncLoop();
+    this.roomCode = null;
   }
 }
 
@@ -1564,8 +1430,9 @@ class MatchmakingUI {
     this.roomMode = 'connecting';
     this.updateStatusText();
     this.client.joinRoom(code)
-      .then(() => {
-        this.roomCode = code;
+      .then((data) => {
+        this.roomCode = data.roomCode;
+        this.elements.input.value = data.roomCode;
         this.roomMode = 'joined';
         this.onRoomReady();
       })
@@ -1575,13 +1442,12 @@ class MatchmakingUI {
       });
   }
   handleCreate() {
-    const code = this.generateCode();
-    this.elements.input.value = code;
     this.roomMode = 'connecting';
     this.updateStatusText();
-    this.client.createRoom(code)
-      .then(() => {
-        this.roomCode = code;
+    this.client.createRoom()
+      .then((data) => {
+        this.roomCode = data.roomCode;
+        this.elements.input.value = data.roomCode;
         this.roomMode = 'created';
         this.onRoomReady();
       })
@@ -1597,6 +1463,7 @@ class MatchmakingUI {
     );
     this.elements.boards.classList.remove('hidden');
     this.renderLocal(this.game);
+    this.remoteState = null;
     this.renderRemote();
     this.updateStatusText();
   }
@@ -1667,14 +1534,6 @@ class MatchmakingUI {
     const pps = Number.isFinite(stats.pps) ? stats.pps : 0;
     return `LINES: ${lines} | TIME: ${formatTime(time)} | APM: ${apm.toFixed(1)} | PPS: ${pps.toFixed(2)}`;
   }
-  generateCode() {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let code = '';
-    for (let i = 0; i < 6; i++) {
-      code += alphabet[Math.floor(Math.random() * alphabet.length)];
-    }
-    return code;
-  }
 }
 class App {
   constructor() {
@@ -1682,6 +1541,7 @@ class App {
     this.settingsStore = new SettingsStore('ru-tetris-binds', DEFAULT_BINDINGS);
     this.screenManager = new ScreenManager();
     this.game = new Game(CONFIG);
+    window.__gameInstance = this.game;
     this.multiplayer = new MultiplayerClient();
     this.multiplayer.configure(CONFIG);
     this.game.attachMultiplayer(this.multiplayer);
@@ -1815,6 +1675,3 @@ class App {
 
 new App();
 })();
-</script>
-</body>
-</html>
