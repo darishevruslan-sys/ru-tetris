@@ -20,7 +20,6 @@ module.exports = async (req, res) => {
   }
 
   const body = readBody(req);
-
   const { roomCode } = body;
   let { playerId } = body;
 
@@ -33,7 +32,7 @@ module.exports = async (req, res) => {
     playerId = "p_" + Math.random().toString(36).slice(2, 8);
   }
 
-  const room = joinRoom(roomCode.toUpperCase(), playerId);
+  const room = await joinRoom(roomCode.toUpperCase(), playerId);
   if (!room) {
     res.status(404).json({ ok: false, error: "room not found" });
     return;

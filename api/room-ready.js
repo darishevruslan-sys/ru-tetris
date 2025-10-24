@@ -27,7 +27,7 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const room = setReady(roomCode.toUpperCase(), playerId, !!ready);
+  const room = await setReady(roomCode.toUpperCase(), playerId, !!ready);
   if (!room) {
     res.status(404).json({ ok: false, error: "room not found" });
     return;

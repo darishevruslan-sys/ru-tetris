@@ -20,9 +20,9 @@ module.exports = async (req, res) => {
   }
 
   const body = readBody(req);
-  const playerId = body.playerId || ("p_" + Math.random().toString(36).slice(2, 8));
+  const playerId = body.playerId || "p_" + Math.random().toString(36).slice(2, 8);
 
-  const room = createRoom(playerId);
+  const room = await createRoom(playerId);
 
   res.status(200).json({
     ok: true,
