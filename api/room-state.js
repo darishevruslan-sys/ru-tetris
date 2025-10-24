@@ -1,12 +1,8 @@
-const { updateState } = require("./_rooms.js");
+const { updateState, getRoom } = require("./_rooms.js");
 
 function readBody(req) {
   if (typeof req.body === "string") {
-    try {
-      return JSON.parse(req.body);
-    } catch (e) {
-      return {};
-    }
+    try { return JSON.parse(req.body); } catch (e) { return {}; }
   } else if (req.body && typeof req.body === "object") {
     return req.body;
   }
@@ -27,14 +23,14 @@ module.exports = async (req, res) => {
     return;
   }
 
-  // write/update my snapshot (with my latest board + outgoing attack)
+  // записываем снапшот игрока
   const room = updateState(roomCode.toUpperCase(), playerId, state, attack);
   if (!room) {
     res.status(404).json({ ok: false, error: "room not found" });
     return;
   }
 
-  // collect opponent data
+  // собираем данные соперника и его атаку
   const opponents = {};
   for (const pid of room.players) {
     if (pid === playerId) continue;
@@ -44,8 +40,7 @@ module.exports = async (req, res) => {
         state: snap.state,
         attack: snap.attack || 0
       };
-      // consume their attack so we don't resend the exact same garbage repeatedly
-      snap.attack = 0;
+      snap.attack = 0; // скинули гарбедж — обнулили
     }
   }
 
@@ -53,6 +48,8 @@ module.exports = async (req, res) => {
     ok: true,
     players: room.players,
     you: playerId,
-    opponents
+    opponents,
+    startAt: room.startAt || null,
+    ready: room.ready || {}
   });
 };
