@@ -34,11 +34,13 @@ function joinRoom(code, playerId) {
   return room;
 }
 
-function updateState(code, playerId, state) {
+function updateState(code, playerId, state, attack = 0) {
   const room = rooms[code];
   if (!room) return null;
+  const attackValue = Math.max(0, Math.min(20, Math.floor(Number(attack) || 0)));
   room.snapshots[playerId] = {
     state,
+    attack: attackValue,
     ts: Date.now()
   };
   return room;

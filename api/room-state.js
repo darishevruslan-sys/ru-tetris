@@ -11,13 +11,13 @@ module.exports = async (req, res) => {
     body = JSON.parse(req.body || "{}");
   } catch (e) {}
 
-  const { roomCode, playerId, state } = body;
+  const { roomCode, playerId, state, attack = 0 } = body;
   if (!roomCode || !playerId || !state) {
     res.status(400).json({ ok: false, error: "roomCode, playerId, state required" });
     return;
   }
 
-  const room = updateState(roomCode.toUpperCase(), playerId, state);
+  const room = updateState(roomCode.toUpperCase(), playerId, state, attack);
   if (!room) {
     res.status(404).json({ ok: false, error: "room not found" });
     return;
@@ -26,8 +26,12 @@ module.exports = async (req, res) => {
   const opponents = {};
   for (const pid of room.players) {
     if (pid === playerId) continue;
-    if (room.snapshots[pid]) {
-      opponents[pid] = room.snapshots[pid].state;
+    const snapshot = room.snapshots[pid];
+    if (snapshot) {
+      opponents[pid] = {
+        state: snapshot.state,
+        attack: snapshot.attack || 0
+      };
     }
   }
 
