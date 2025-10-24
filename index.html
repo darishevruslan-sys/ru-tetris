@@ -453,13 +453,12 @@ const CONFIG = {
 };
 
 const SPAWN_X_STD = 3;
-const SPAWN_X_O = SPAWN_X_STD - 1;
-const SPAWN_X_I = SPAWN_X_STD + 1;
-const SPAWN_Y = -2;
+const SPAWN_X_O = 4;
+const SPAWN_Y_STD = -2;
 const SPAWN_POS = {
-  default: { x: SPAWN_X_STD, y: SPAWN_Y },
-  I: { x: SPAWN_X_I, y: SPAWN_Y },
-  O: { x: SPAWN_X_O, y: SPAWN_Y }
+  default: { x: SPAWN_X_STD, y: SPAWN_Y_STD },
+  I: { x: SPAWN_X_STD, y: SPAWN_Y_STD - 1 },
+  O: { x: SPAWN_X_O, y: SPAWN_Y_STD }
 };
 const BAG = ['I', 'J', 'L', 'O', 'S', 'T', 'Z'];
 const COLORS = {
@@ -510,10 +509,10 @@ const TETROMINO_SHAPES = {
     [[1, 0], [1, 1], [1, 2], [1, 3]]
   ],
   O: [
-    [[1, 0], [2, 0], [1, 1], [2, 1]],
-    [[1, 0], [2, 0], [1, 1], [2, 1]],
-    [[1, 0], [2, 0], [1, 1], [2, 1]],
-    [[1, 0], [2, 0], [1, 1], [2, 1]]
+    [[0, 0], [1, 0], [0, 1], [1, 1]],
+    [[0, 0], [1, 0], [0, 1], [1, 1]],
+    [[0, 0], [1, 0], [0, 1], [1, 1]],
+    [[0, 0], [1, 0], [0, 1], [1, 1]]
   ]
 };
 const JLSTZ_KICKS = {
