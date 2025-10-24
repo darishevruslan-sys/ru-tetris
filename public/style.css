@@ -35,6 +35,9 @@ canvas{background:#0f1628;border-radius:10px}
 .match-input{flex:1;min-width:180px;padding:12px 16px;border-radius:8px;border:1px solid #1d2745;background:#050a18;color:#e4e7ff;font-size:16px}
 .match-status{color:#7c86b9;font-size:14px;line-height:1.4}
 .match-room-code{font-size:16px;color:#9aa4d9}
+.match-ready-btn{flex:1;min-width:180px}
+.match-ready-btn.ready-active{background:#24502d}
+.match-ready-btn.ready-active:hover{background:#2d6338}
 .match-boards{display:flex;gap:24px;justify-content:center;flex-wrap:wrap}
 .match-boards.hidden{display:none}
 .match-board{display:flex;flex-direction:column;gap:10px;align-items:center}

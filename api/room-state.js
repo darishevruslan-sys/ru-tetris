@@ -30,7 +30,7 @@ module.exports = async (req, res) => {
     return;
   }
 
-  // собираем данные соперника и его атаку
+  // collect opponent data + consume their attack
   const opponents = {};
   for (const pid of room.players) {
     if (pid === playerId) continue;
@@ -40,7 +40,8 @@ module.exports = async (req, res) => {
         state: snap.state,
         attack: snap.attack || 0
       };
-      snap.attack = 0; // скинули гарбедж — обнулили
+      // consume garbage after giving it
+      snap.attack = 0;
     }
   }
 

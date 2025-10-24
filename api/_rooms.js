@@ -19,6 +19,8 @@ function createRoom(playerId) {
     code,
     players: [playerId],
     snapshots: {}, // { playerId: { state, ts } }
+    ready: { [playerId]: false },
+    startAt: null,
     createdAt: Date.now()
   };
 
@@ -31,6 +33,9 @@ function joinRoom(code, playerId) {
   if (!room.players.includes(playerId)) {
     room.players.push(playerId);
   }
+  if (!Object.prototype.hasOwnProperty.call(room.ready, playerId)) {
+    room.ready[playerId] = false;
+  }
   return room;
 }
 
@@ -38,6 +43,9 @@ function updateState(code, playerId, state, attack = 0) {
   const room = rooms[code];
   if (!room) return null;
   const attackValue = Math.max(0, Math.min(20, Math.floor(Number(attack) || 0)));
+  if (!Object.prototype.hasOwnProperty.call(room.ready, playerId)) {
+    room.ready[playerId] = false;
+  }
   room.snapshots[playerId] = {
     state,
     attack: attackValue,
@@ -50,9 +58,39 @@ function getRoom(code) {
   return rooms[code] || null;
 }
 
+function setReady(code, playerId, isReady) {
+  const room = rooms[code];
+  if (!room) return null;
+
+  room.ready[playerId] = !!isReady;
+
+  const allReady = room.players.length >= 2 && room.players.every(pid => room.ready[pid]);
+
+  if (allReady) {
+    if (!room.startAt) {
+      room.startAt = Date.now() + 1500;
+    }
+  } else {
+    room.startAt = null;
+  }
+
+  return room;
+}
+
+function getStartInfo(code) {
+  const room = rooms[code];
+  if (!room) return null;
+  return {
+    startAt: room.startAt || null,
+    ready: { ...room.ready }
+  };
+}
+
 module.exports = {
   createRoom,
   joinRoom,
   updateState,
-  getRoom
+  getRoom,
+  setReady,
+  getStartInfo
 };

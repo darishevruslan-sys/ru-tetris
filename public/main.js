@@ -32,7 +32,13 @@ const i18n = {
       joinSuccess: 'Вы присоединились к комнате {{code}}.',
       localPlayer: 'Вы',
       remotePlayer: 'Оппонент',
-      waitingOpponent: 'Ожидание данных от оппонента...'
+      waitingOpponent: 'Ожидание данных от оппонента...',
+      ready: 'Готов',
+      notReady: 'Отменить готовность',
+      statusPromptReady: 'Нажмите «Готов», когда будете готовы к старту.',
+      statusWaitingOpponentReady: 'Ожидание готовности второго игрока...',
+      statusCountdown: 'Старт через 1.5 секунды...',
+      statusInGame: 'Матч идёт!'
     },
     login: {
       title: 'Войти',
@@ -85,7 +91,13 @@ const i18n = {
       joinSuccess: 'Joined room {{code}}.',
       localPlayer: 'You',
       remotePlayer: 'Opponent',
-      waitingOpponent: 'Waiting for opponent data...'
+      waitingOpponent: 'Waiting for opponent data...',
+      ready: 'Ready',
+      notReady: 'Not Ready',
+      statusPromptReady: 'Press Ready when you are set to begin.',
+      statusWaitingOpponentReady: 'Waiting for the other player...',
+      statusCountdown: 'Starting in 1.5 seconds...',
+      statusInGame: 'Match in progress!'
     },
     login: {
       title: 'Sign In',
@@ -589,8 +601,14 @@ class MultiplayerClient {
     this.playerId = null;
     this.remoteStateHandler = () => {};
     this.garbageHandler = () => {};
+    this.infoHandler = () => {};
     this.syncTimer = null;
     this.lastAttack = 0;
+    this.lastState = null;
+    this.startAt = null;
+    this.gameStarted = false;
+    this.readyState = {};
+    this.syncInFlight = false;
   }
 
   configure(config) {
@@ -615,7 +633,12 @@ class MultiplayerClient {
     if (!data || !data.ok) throw new Error('createRoom failed');
     this.roomCode = data.roomCode;
     this.playerId = data.you;
+    this.startAt = null;
+    this.gameStarted = false;
+    this.readyState = {};
     this.startSyncLoop();
+    this.emitRoomInfo();
+    this.syncOnce();
     return data;
   }
 
@@ -627,53 +650,35 @@ class MultiplayerClient {
     if (!data || !data.ok) throw new Error('joinRoom failed');
     this.roomCode = data.roomCode;
     this.playerId = data.you;
+    this.startAt = null;
+    this.gameStarted = false;
+    this.readyState = {};
     this.startSyncLoop();
+    this.emitRoomInfo();
+    this.syncOnce();
+    return data;
+  }
+
+  async setReady(isReady) {
+    if (!this.roomCode || !this.playerId) return null;
+    const data = await this.postJSON('/api/room-ready', {
+      roomCode: this.roomCode,
+      playerId: this.playerId,
+      ready: !!isReady
+    });
+    if (data && data.ok) {
+      this.startAt = data.startAt || null;
+      this.readyState = data.ready ? { ...data.ready } : {};
+      if (!this.startAt) {
+        this.gameStarted = false;
+      }
+      this.emitRoomInfo();
+    }
     return data;
   }
 
   sendState(state) {
     this.lastState = state;
-  }
-
-  sendStateNow(gameState) {
-    if (!this.roomCode || !this.playerId) return Promise.resolve(null);
-    const payload = {
-      roomCode: this.roomCode,
-      playerId: this.playerId,
-      state: gameState,
-      attack: this.lastAttack || 0
-    };
-    return this.postJSON('/api/room-state', {
-      ...payload
-    })
-      .then((resp) => {
-        if (!resp || !resp.ok) return resp;
-        const opponents = resp.opponents || {};
-        let firstOpponentState = null;
-        for (const key in opponents) {
-          if (!Object.prototype.hasOwnProperty.call(opponents, key)) continue;
-          const opponent = opponents[key];
-          if (!opponent) continue;
-          let snapshot = opponent;
-          let incomingAttack = 0;
-          if (typeof opponent === 'object' && opponent !== null) {
-            if ('state' in opponent) snapshot = opponent.state;
-            if (Number.isFinite(opponent.attack)) incomingAttack = opponent.attack;
-          }
-          if (!firstOpponentState && snapshot) {
-            firstOpponentState = snapshot;
-          }
-          if (incomingAttack > 0) {
-            this.garbageHandler(incomingAttack);
-          }
-        }
-        if (typeof this.remoteStateHandler === 'function') {
-          this.remoteStateHandler(firstOpponentState || null);
-        }
-        this.lastAttack = 0;
-        return resp;
-      })
-      .catch(() => null);
   }
 
   onRemoteState(callback) {
@@ -684,19 +689,108 @@ class MultiplayerClient {
     this.garbageHandler = typeof callback === 'function' ? callback : () => {};
   }
 
+  onRoomInfo(callback) {
+    this.infoHandler = typeof callback === 'function' ? callback : () => {};
+  }
+
+  emitRoomInfo() {
+    if (typeof this.infoHandler === 'function') {
+      this.infoHandler({
+        roomCode: this.roomCode,
+        you: this.playerId,
+        startAt: this.startAt,
+        ready: { ...this.readyState }
+      });
+    }
+  }
+
+  async syncOnce() {
+    if (this.syncInFlight) return;
+    this.syncInFlight = true;
+    let resp = null;
+    try {
+      if (!this.roomCode || !this.playerId) return;
+      if (!window.__gameInstance) return;
+
+      const snapshot = window.__gameInstance.getNetworkState
+        ? window.__gameInstance.getNetworkState()
+        : this.lastState || {};
+      if (this.gameStarted && window.__gameInstance.state !== 'running') {
+        this.gameStarted = false;
+      }
+      this.lastState = snapshot;
+      const attackToSend = this.lastAttack || 0;
+
+      resp = await this.postJSON('/api/room-state', {
+        roomCode: this.roomCode,
+        playerId: this.playerId,
+        state: snapshot,
+        attack: attackToSend
+      });
+      if (!resp || !resp.ok) {
+        return;
+      }
+
+      this.lastAttack = 0;
+
+      if (resp.startAt !== undefined) {
+        this.startAt = resp.startAt || null;
+        if (!this.startAt) {
+          this.gameStarted = false;
+        }
+      }
+
+      if (resp.ready) {
+        this.readyState = { ...resp.ready };
+      }
+
+      this.emitRoomInfo();
+
+      if (!this.gameStarted && this.startAt && Date.now() >= this.startAt) {
+        if (window.__appInstance && window.__appInstance.currentScreenId !== 'gameScreen') {
+          window.__appInstance.openScreen('gameScreen');
+        }
+        if (window.__gameInstance && window.__gameInstance.state !== 'running') {
+          window.__gameInstance.start();
+        }
+        this.gameStarted = true;
+      }
+
+      const opponents = resp.opponents || {};
+      let firstOpponentState = null;
+      for (const key in opponents) {
+        if (!Object.prototype.hasOwnProperty.call(opponents, key)) continue;
+        const opponent = opponents[key];
+        if (!opponent) continue;
+        const snapshotState = opponent.state || null;
+        if (!firstOpponentState && snapshotState) {
+          firstOpponentState = snapshotState;
+        }
+        const incomingAttack = Number.isFinite(opponent.attack) ? opponent.attack : 0;
+        if (incomingAttack > 0 && typeof this.garbageHandler === 'function') {
+          this.garbageHandler(incomingAttack);
+        }
+      }
+
+      if (typeof this.remoteStateHandler === 'function') {
+        this.remoteStateHandler(firstOpponentState || null);
+      }
+    } finally {
+      this.syncInFlight = false;
+    }
+  }
+
   sendAttack(lines) {
     const amount = Math.max(0, Math.floor(lines));
     if (amount <= 0) return;
-    this.lastAttack = Math.min(amount, 20);
+    const current = this.lastAttack || 0;
+    this.lastAttack = Math.min(current + amount, 20);
   }
 
   startSyncLoop() {
     this.stopSyncLoop();
     this.syncTimer = setInterval(() => {
-      if (!window.__gameInstance) return;
-      const snapshot = window.__gameInstance.getNetworkState();
-      this.sendState(snapshot);
-      this.sendStateNow(snapshot);
+      this.syncOnce();
     }, 300);
   }
 
@@ -707,9 +801,20 @@ class MultiplayerClient {
     }
   }
 
+  isLocalReady() {
+    if (!this.playerId) return false;
+    return !!this.readyState[this.playerId];
+  }
+
   disconnect() {
     this.stopSyncLoop();
+    this.startAt = null;
+    this.gameStarted = false;
+    this.readyState = {};
+    this.lastAttack = 0;
+    this.lastState = null;
     this.roomCode = null;
+    this.emitRoomInfo();
   }
 }
 
@@ -1451,6 +1556,7 @@ class MatchmakingUI {
       input: document.getElementById('roomCodeInput'),
       joinBtn: document.getElementById('joinRoomBtn'),
       createBtn: document.getElementById('createRoomBtn'),
+      readyBtn: document.getElementById('readyBtn'),
       roomCode: document.getElementById('matchRoomCode'),
       boards: document.getElementById('matchBoards'),
       localTitle: document.getElementById('localBoardTitle'),
@@ -1463,6 +1569,9 @@ class MatchmakingUI {
     this.roomCode = null;
     this.roomMode = 'idle';
     this.remoteState = null;
+    this.startAt = null;
+    this.readyState = {};
+    this.isReady = false;
     this.localRenderer = new BoardSnapshotRenderer(this.elements.localCanvas, config);
     this.remoteRenderer = new BoardSnapshotRenderer(this.elements.remoteCanvas, config);
     this.attachEvents();
@@ -1473,12 +1582,23 @@ class MatchmakingUI {
     this.client.onGarbage((lines) => {
       this.game.receiveGarbage(lines);
     });
+    this.client.onRoomInfo((info) => {
+      this.startAt = info && typeof info.startAt === 'number' ? info.startAt : null;
+      this.readyState = (info && info.ready) ? info.ready : {};
+      const currentlyReady = this.client.isLocalReady();
+      if (this.isReady !== currentlyReady) {
+        this.isReady = currentlyReady;
+      }
+      this.updateReadyButton();
+      this.updateStatusText();
+    });
     this.refreshText();
     this.updateStatusText();
   }
   attachEvents() {
     this.elements.joinBtn.addEventListener('click', () => this.handleJoin());
     this.elements.createBtn.addEventListener('click', () => this.handleCreate());
+    this.elements.readyBtn.addEventListener('click', () => this.handleReadyToggle());
     this.elements.input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
@@ -1489,6 +1609,7 @@ class MatchmakingUI {
   refreshText() {
     this.elements.joinBtn.textContent = this.locale.t('match.join');
     this.elements.createBtn.textContent = this.locale.t('match.create');
+    this.updateReadyButton();
     this.elements.input.placeholder = this.locale.t('match.placeholder');
     this.elements.localTitle.textContent = this.locale.t('match.localPlayer');
     this.elements.remoteTitle.textContent = this.locale.t('match.remotePlayer');
@@ -1515,10 +1636,17 @@ class MatchmakingUI {
         this.roomCode = data.roomCode;
         this.elements.input.value = data.roomCode;
         this.roomMode = 'joined';
+        this.isReady = false;
+        this.startAt = null;
+        this.readyState = {};
         this.onRoomReady();
       })
       .catch(() => {
         this.roomMode = 'error';
+        this.isReady = false;
+        this.startAt = null;
+        this.readyState = {};
+        this.updateReadyButton();
         this.updateStatusText();
       });
   }
@@ -1530,10 +1658,17 @@ class MatchmakingUI {
         this.roomCode = data.roomCode;
         this.elements.input.value = data.roomCode;
         this.roomMode = 'created';
+        this.isReady = false;
+        this.startAt = null;
+        this.readyState = {};
         this.onRoomReady();
       })
       .catch(() => {
         this.roomMode = 'error';
+        this.isReady = false;
+        this.startAt = null;
+        this.readyState = {};
+        this.updateReadyButton();
         this.updateStatusText();
       });
   }
@@ -1543,22 +1678,51 @@ class MatchmakingUI {
       { code: this.roomCode }
     );
     this.elements.boards.classList.remove('hidden');
+    this.elements.readyBtn.style.display = '';
+    this.elements.readyBtn.disabled = false;
     this.renderLocal(this.game);
     this.remoteState = null;
     this.renderRemote();
+    this.updateReadyButton();
     this.updateStatusText();
   }
   leaveRoom() {
+    if (this.roomCode) {
+      this.client.setReady(false);
+    }
     this.roomCode = null;
     this.roomMode = 'idle';
     this.remoteState = null;
+    this.isReady = false;
+    this.startAt = null;
+    this.readyState = {};
     this.elements.roomCode.textContent = '';
     this.elements.boards.classList.add('hidden');
+    this.elements.readyBtn.style.display = 'none';
+    this.elements.readyBtn.disabled = true;
+    this.elements.readyBtn.classList.remove('ready-active');
     this.client.disconnect();
     this.updateStatusText();
     this.renderRemote();
   }
   updateStatusText() {
+    if (this.roomMode === 'created' || this.roomMode === 'joined') {
+      let messageKey = 'match.statusPromptReady';
+      if (this.client.gameStarted) {
+        messageKey = 'match.statusInGame';
+      } else if (!this.isReady) {
+        messageKey = 'match.statusPromptReady';
+      } else if (!this.startAt) {
+        messageKey = 'match.statusWaitingOpponentReady';
+      } else if (Date.now() < this.startAt) {
+        messageKey = 'match.statusCountdown';
+      } else {
+        messageKey = 'match.statusInGame';
+      }
+      this.elements.description.textContent = this.locale.t(messageKey);
+      return;
+    }
+
     let key = 'match.statusIdle';
     switch (this.roomMode) {
       case 'connecting':
@@ -1570,18 +1734,43 @@ class MatchmakingUI {
       case 'error':
         key = 'match.statusError';
         break;
-      case 'created':
-        key = 'match.createSuccess';
-        break;
-      case 'joined':
-        key = 'match.joinSuccess';
-        break;
       default:
         key = 'match.statusIdle';
         break;
     }
     const params = this.roomCode ? { code: this.roomCode } : {};
     this.elements.description.textContent = this.locale.t(key, params);
+  }
+  handleReadyToggle() {
+    if (!(this.roomMode === 'created' || this.roomMode === 'joined')) return;
+    const nextState = !this.client.isLocalReady();
+    this.elements.readyBtn.disabled = true;
+    this.client.setReady(nextState).finally(() => {
+      this.isReady = this.client.isLocalReady();
+      this.elements.readyBtn.disabled = false;
+      this.updateReadyButton();
+      this.updateStatusText();
+    });
+  }
+  updateReadyButton() {
+    const btn = this.elements.readyBtn;
+    if (!btn) return;
+    const inRoom = this.roomMode === 'created' || this.roomMode === 'joined';
+    if (!inRoom) {
+      btn.style.display = 'none';
+      btn.disabled = true;
+      btn.classList.remove('ready-active');
+      btn.textContent = this.locale.t('match.ready');
+      return;
+    }
+    btn.style.display = '';
+    const localReady = this.client.isLocalReady();
+    btn.textContent = this.locale.t(localReady ? 'match.notReady' : 'match.ready');
+    if (localReady) {
+      btn.classList.add('ready-active');
+    } else {
+      btn.classList.remove('ready-active');
+    }
   }
   renderLocal(game) {
     const state = game.getRenderState();
@@ -1626,6 +1815,9 @@ class App {
     this.multiplayer = new MultiplayerClient();
     this.multiplayer.configure(CONFIG);
     this.game.attachMultiplayer(this.multiplayer);
+    window.__multiplayerClient = this.multiplayer;
+    window.__appInstance = this;
+    this.currentScreenId = null;
     const hud = {
       lines: document.getElementById('linesVal'),
       time: document.getElementById('timeVal'),
@@ -1722,16 +1914,19 @@ class App {
   openScreen(id) {
     const element = document.getElementById(id);
     this.screenManager.show(element);
+    this.currentScreenId = id;
     if (id !== 'gameScreen' && this.game.state === 'running') {
       this.game.finish();
       this.hideOverlay();
     }
-    if (id === 'gameScreen' && this.game.state !== 'running') {
+    if (id === 'gameScreen') {
       this.hideOverlay();
-      this.game.start();
     }
   }
   startFortyLines() {
+    if (this.game.state !== 'running') {
+      this.game.start();
+    }
     this.openScreen('gameScreen');
   }
   showResults(summary) {
