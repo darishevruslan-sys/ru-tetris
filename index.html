@@ -193,7 +193,7 @@ input::placeholder{color:#4f5a8c}
 
     // Y-DOWN ⇒ invert Y from published tables.
     const KICKS90 = {
-      JLSTZ: {
+      T: {
         '0>R': [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],
         'R>0': [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]],
         'R>2': [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]],
@@ -202,6 +202,17 @@ input::placeholder{color:#4f5a8c}
         'L>2': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
         'L>0': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
         '0>L': [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]]
+      },
+      // Extra tuck kicks [0,1],[1,1],[-1,1] added for Z/S/L/J to allow pocket spins like modern clients. T and I stay standard.
+      ZSLJ: {
+        '0>R': [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2], [0, 1], [1, 1], [-1, 1]],
+        'R>0': [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2], [0, 1], [1, 1], [-1, 1]],
+        'R>2': [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2], [0, 1], [1, 1], [-1, 1]],
+        '2>R': [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2], [0, 1], [1, 1], [-1, 1]],
+        '2>L': [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2], [0, 1], [1, 1], [-1, 1]],
+        'L>2': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2], [0, 1], [1, 1], [-1, 1]],
+        'L>0': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2], [0, 1], [1, 1], [-1, 1]],
+        '0>L': [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2], [0, 1], [1, 1], [-1, 1]]
       },
       I: {
         // I-piece uses SRS+ (left tables mirrored from right).
@@ -320,10 +331,16 @@ input::placeholder{color:#4f5a8c}
 
     function get90KickTests(type, from, to) {
       const key = `${ROTATION_NAMES[from]}>${ROTATION_NAMES[to]}`;
+      let table;
       if (type === 'I') {
-        return KICKS90.I[key] || [[0, 0]];
+        table = KICKS90.I;
+      } else if (type === 'T') {
+        table = KICKS90.T;
+      } else {
+        table = KICKS90.ZSLJ;
       }
-      return KICKS90.JLSTZ[key] || [[0, 0]];
+      const kicks = table && table[key];
+      return kicks && kicks.length ? kicks : [[0, 0]];
     }
 
     function get180KickTests(type, from, to) {
