@@ -1,5 +1,10 @@
 (() => {
 
+window.__appInstance = window.__appInstance || {};
+if (typeof window.__appInstance.gameMode !== 'string') {
+  window.__appInstance.gameMode = 'sprint';
+}
+
 window.__gameInstance = window.__gameInstance || {};
 const globalGameState = window.__gameInstance;
 if (!Array.isArray(globalGameState.sharedBag)) {
@@ -17,6 +22,12 @@ if (!Number.isFinite(globalGameState.pendingAttackToSend)) {
 if (typeof globalGameState.isRunning !== 'boolean') {
   globalGameState.isRunning = false;
 }
+if (typeof globalGameState.isDead !== 'boolean') {
+  globalGameState.isDead = false;
+}
+if (!Number.isFinite(globalGameState.linesCleared)) {
+  globalGameState.linesCleared = 0;
+}
 if (typeof globalGameState.startNewRound !== 'function') {
   globalGameState.startNewRound = () => {};
 }
@@ -28,6 +39,12 @@ if (typeof globalGameState.applyIncomingGarbage !== 'function') {
 }
 if (typeof globalGameState.renderOpponent !== 'function') {
   globalGameState.renderOpponent = () => {};
+}
+if (typeof globalGameState.startSprintRun !== 'function') {
+  globalGameState.startSprintRun = () => {};
+}
+if (typeof globalGameState.startMultiplayerRoundFromServer !== 'function') {
+  globalGameState.startMultiplayerRoundFromServer = () => {};
 }
 
 function getNextSharedPiece() {
@@ -54,6 +71,31 @@ function getSharedPreview(count) {
   }
   return preview;
 }
+
+function getCurrentGameMode() {
+  const app = window.__appInstance;
+  return app && typeof app.gameMode === 'string' ? app.gameMode : 'sprint';
+}
+
+function applyUIMode() {
+  const mode = getCurrentGameMode();
+  const oppPanel = document.getElementById('opponentPanel');
+  const apmLabel = document.getElementById('apmLabel');
+  const apmValue = document.getElementById('apmVal');
+  const ppsLabel = document.getElementById('ppsLabel');
+  const ppsValue = document.getElementById('ppsVal');
+  const elements = [oppPanel, apmLabel, apmValue, ppsLabel, ppsValue];
+  for (const el of elements) {
+    if (!el) continue;
+    if (mode === 'sprint') {
+      el.classList.add('hidden');
+    } else {
+      el.classList.remove('hidden');
+    }
+  }
+}
+
+const LOCAL_PIECES = ['I', 'J', 'L', 'O', 'S', 'T', 'Z'];
 
 const i18n = {
   ru: {
@@ -775,12 +817,13 @@ class MultiplayerClient {
 
   shouldReportDeath() {
     if (this.reportedDeath) return false;
+    if (getCurrentGameMode() !== 'multi') return false;
     const game = window.__gameInstance;
     if (!game) return false;
     if (typeof game.getLastFinishReason === 'function') {
       if (game.state === 'finished') {
         const reason = game.getLastFinishReason();
-        return reason === 'toppedOut' || reason === 'clear40';
+        return reason === 'toppedOut';
       }
       return false;
     }
@@ -790,6 +833,7 @@ class MultiplayerClient {
   async syncOnce() {
     if (this.syncInFlight) return;
     if (!this.roomCode || !this.playerId) return;
+    if (getCurrentGameMode() === 'sprint') return;
     this.syncInFlight = true;
     let resp = null;
     try {
@@ -822,9 +866,7 @@ class MultiplayerClient {
         this.reportedDeath = true;
       }
 
-      if (attackToSend > 0) {
-        g.pendingAttackToSend = Math.max(0, (Number.isFinite(g.pendingAttackToSend) ? g.pendingAttackToSend : 0) - attackToSend);
-      }
+      g.pendingAttackToSend = 0;
 
       if (resp.startAt !== undefined) {
         this.startAt = resp.startAt || null;
@@ -840,15 +882,16 @@ class MultiplayerClient {
         this.roundActive = false;
       }
 
+      let hasNewBag = false;
       if (typeof resp.bagVersion === 'number') {
         if (g.bagVersion !== resp.bagVersion) {
           g.sharedBag = Array.isArray(resp.bag) ? resp.bag.slice() : [];
           g.bagVersion = resp.bagVersion;
           g.bagIndex = 0;
-          if (typeof g.startNewRound === 'function') {
-            g.startNewRound();
-          }
-          g.isRunning = true;
+          hasNewBag = true;
+          this.gameStarted = false;
+          g.isRunning = false;
+          g.isDead = false;
         } else {
           g.sharedBag = Array.isArray(resp.bag) ? resp.bag.slice() : g.sharedBag;
         }
@@ -858,6 +901,7 @@ class MultiplayerClient {
         this.startAt = null;
         this.gameStarted = false;
         g.isRunning = false;
+        g.isDead = false;
         if (typeof g.stopGameLoop === 'function') {
           g.stopGameLoop();
         } else if (g.state === 'running' && typeof g.finish === 'function') {
@@ -874,10 +918,11 @@ class MultiplayerClient {
       } else {
         const startTime = resp.startAt || 0;
         if (Date.now() >= startTime) {
-          if (!this.gameStarted) {
-            if (window.__appInstance && window.__appInstance.currentScreenId !== 'gameScreen') {
-              window.__appInstance.openScreen('gameScreen');
-            }
+          if (window.__appInstance && window.__appInstance.currentScreenId !== 'gameScreen') {
+            window.__appInstance.openScreen('gameScreen');
+          }
+          if ((hasNewBag || !this.gameStarted || !g.isRunning) && typeof g.startMultiplayerRoundFromServer === 'function') {
+            g.startMultiplayerRoundFromServer(resp);
           }
           if (!g.isRunning && typeof g.startNewRound === 'function') {
             g.startNewRound();
@@ -885,6 +930,8 @@ class MultiplayerClient {
           }
           this.gameStarted = true;
           this.reportedDeath = false;
+        } else {
+          this.gameStarted = false;
         }
       }
 
@@ -977,11 +1024,14 @@ class Game {
     this.lastSharedState = null;
     this.isRunning = false;
     this.lastFinishReason = null;
+    this.mode = getCurrentGameMode();
+    this.localBag = [];
     this.reset();
   }
   reset() {
     this.state = 'idle';
     this.queue = [];
+    this.localBag = [];
     this.holdPiece = null;
     this.holdUsed = false;
     this.active = null;
@@ -997,6 +1047,9 @@ class Game {
     this.isRunning = false;
     this.lastFinishReason = null;
   }
+  setMode(mode) {
+    this.mode = mode === 'multi' ? 'multi' : 'sprint';
+  }
   setCallbacks(cb) {
     this.callbacks = cb || {};
   }
@@ -1004,6 +1057,21 @@ class Game {
     this.multiplayerClient = client;
   }
   start() {
+    if (this.mode === 'multi') {
+      this.startMultiplayerRound();
+    } else {
+      this.startSprintRound();
+    }
+  }
+  startSprintRound() {
+    this.setMode('sprint');
+    this.startRoundCore();
+  }
+  startMultiplayerRound() {
+    this.setMode('multi');
+    this.startRoundCore();
+  }
+  startRoundCore() {
     this.reset();
     this.stats.reset();
     this.stats.start();
@@ -1014,7 +1082,9 @@ class Game {
     const g = window.__gameInstance;
     if (g) {
       g.isRunning = true;
+      g.isDead = false;
       g.pendingAttackToSend = 0;
+      g.linesCleared = 0;
     }
     this.ensureQueue();
     this.spawnNext();
@@ -1049,10 +1119,37 @@ class Game {
   }
   ensureQueue() {
     const previewCount = this.config.previewCount || 0;
-    this.queue = getSharedPreview(previewCount);
+    if (this.mode === 'multi') {
+      this.queue = getSharedPreview(previewCount);
+    } else {
+      this.ensureLocalPieces(previewCount + 1);
+      this.queue = this.localBag.slice(0, previewCount);
+    }
   }
   takeFromQueue() {
-    return getNextSharedPiece();
+    if (this.mode === 'multi') {
+      return getNextSharedPiece();
+    }
+    this.ensureLocalPieces(1);
+    const next = this.localBag.shift();
+    return next || 'I';
+  }
+  ensureLocalPieces(minCount) {
+    const target = Math.max(0, minCount);
+    while (this.localBag.length < target) {
+      const bag = this.generateLocalBag();
+      this.localBag.push(...bag);
+    }
+  }
+  generateLocalBag() {
+    const bag = LOCAL_PIECES.slice();
+    for (let i = bag.length - 1; i > 0; i--) {
+      const j = Math.floor(this.random() * (i + 1));
+      const tmp = bag[i];
+      bag[i] = bag[j];
+      bag[j] = tmp;
+    }
+    return bag;
   }
   createPiece(type) {
     const piece = new Tetromino(type);
@@ -1205,6 +1302,10 @@ class Game {
     let attack = 0;
     if (lines > 0) {
       this.stats.addLines(lines);
+      const g = window.__gameInstance;
+      if (g) {
+        g.linesCleared = this.stats.lines;
+      }
       const spinType = spinResult.type || 'none';
       const baseAttack = this.calculateAttack(lines, spinType, this.combo, this.b2b);
       let totalAttack = baseAttack;
@@ -1249,7 +1350,7 @@ class Game {
     this.fallAcc = 0;
     this.softDrop = false;
     this.areTimer = lines > 0 ? this.config.lineClearAre : this.config.are;
-    if (this.stats.lines >= 40) {
+    if (this.mode === 'sprint' && this.stats.lines >= 40) {
       this.finish('clear40');
     }
   }
@@ -1329,6 +1430,7 @@ class Game {
     const g = window.__gameInstance;
     if (g) {
       g.isRunning = false;
+      g.isDead = reason === 'toppedOut';
     }
     this.shareState();
     // TODO: сохранение статистики результатов на сервере
@@ -1876,6 +1978,9 @@ class MatchmakingUI {
     this.renderRemote();
     this.updateReadyButton();
     this.updateStatusText();
+    if (window.__appInstance && typeof window.__appInstance.setGameMode === 'function') {
+      window.__appInstance.setGameMode('multi');
+    }
   }
   leaveRoom() {
     if (this.roomCode) {
@@ -1896,6 +2001,9 @@ class MatchmakingUI {
     this.client.disconnect();
     this.updateStatusText();
     this.renderRemote();
+    if (window.__appInstance && typeof window.__appInstance.setGameMode === 'function') {
+      window.__appInstance.setGameMode('sprint');
+    }
   }
   updateStatusText() {
     if (this.roomMode === 'created' || this.roomMode === 'joined') {
@@ -2004,20 +2112,24 @@ class MatchmakingUI {
 }
 class App {
   constructor() {
+    const initialMode = getCurrentGameMode();
     this.locale = new Localization(i18n, 'ru');
     this.settingsStore = new SettingsStore('ru-tetris-binds', DEFAULT_BINDINGS);
     this.screenManager = new ScreenManager();
     this.game = new Game(CONFIG);
+    this.game.setMode(initialMode);
     const g = window.__gameInstance;
     g.game = this.game;
     g.getNetworkState = this.game.getNetworkState.bind(this.game);
     g.getLastFinishReason = this.game.getLastFinishReason.bind(this.game);
-    g.startNewRound = this.game.startNewRound.bind(this.game);
     g.stopGameLoop = this.game.stopGameLoop.bind(this.game);
     g.applyIncomingGarbage = (lines) => {
       this.game.receiveGarbage(lines);
     };
     g.finish = this.game.finish.bind(this.game);
+    g.startSprintRun = () => this.startSprintRun();
+    g.startMultiplayerRoundFromServer = (data) => this.startMultiplayerRoundFromServer(data);
+    g.startNewRound = () => this.startMultiplayerRoundFromServer({ bag: g.sharedBag, bagVersion: g.bagVersion });
     g.start = this.game.start.bind(this.game);
     g.showLobbyScreen = this.game.showLobbyScreen.bind(this.game);
     Object.defineProperty(g, 'state', {
@@ -2075,6 +2187,8 @@ class App {
     this.game.attachMultiplayer(this.multiplayer);
     window.__multiplayerClient = this.multiplayer;
     window.__appInstance = this;
+    this.gameMode = initialMode;
+    window.__appInstance.gameMode = initialMode;
     this.currentScreenId = null;
     const hud = {
       lines: document.getElementById('linesVal'),
@@ -2103,11 +2217,60 @@ class App {
       () => this.input.refreshBindings()
     );
     this.bindUI();
+    this.setGameMode(initialMode);
     this.game.setCallbacks({
       finish: (summary) => this.showResults(summary)
     });
     this.lastFrame = performance.now();
     requestAnimationFrame((ts) => this.loop(ts));
+  }
+  setGameMode(mode) {
+    const normalized = mode === 'multi' ? 'multi' : 'sprint';
+    this.gameMode = normalized;
+    if (window.__appInstance !== this) {
+      window.__appInstance = this;
+    }
+    window.__appInstance.gameMode = normalized;
+    if (this.game && typeof this.game.setMode === 'function') {
+      this.game.setMode(normalized);
+    }
+    applyUIMode();
+    if (normalized === 'sprint') {
+      const g = window.__gameInstance;
+      if (g && typeof g.renderOpponent === 'function') {
+        g.renderOpponent(null);
+      }
+    }
+  }
+  startSprintRun() {
+    this.setGameMode('sprint');
+    const g = window.__gameInstance;
+    if (g) {
+      g.linesCleared = 0;
+      g.pendingAttackToSend = 0;
+      g.isRunning = true;
+      g.isDead = false;
+      g.bagIndex = 0;
+    }
+    this.game.startSprintRound();
+  }
+  startMultiplayerRoundFromServer(data) {
+    this.setGameMode('multi');
+    const g = window.__gameInstance;
+    if (g) {
+      if (data && Array.isArray(data.bag)) {
+        g.sharedBag = data.bag.slice();
+      }
+      if (data && typeof data.bagVersion === 'number') {
+        g.bagVersion = data.bagVersion;
+      }
+      g.bagIndex = 0;
+      g.pendingAttackToSend = 0;
+      g.isRunning = true;
+      g.isDead = false;
+      g.linesCleared = 0;
+    }
+    this.game.startMultiplayerRound();
   }
   bindUI() {
     const menuPlayBtn = document.getElementById('menuPlayBtn');
@@ -2182,9 +2345,7 @@ class App {
     }
   }
   startFortyLines() {
-    if (this.game.state !== 'running') {
-      this.game.start();
-    }
+    this.startSprintRun();
     this.openScreen('gameScreen');
   }
   showResults(summary) {

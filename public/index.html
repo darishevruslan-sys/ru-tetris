@@ -26,8 +26,8 @@
       <div class="stats">
         <div>LINES</div><div class="hud-text" id="linesVal">0</div>
         <div>TIME</div><div class="hud-text" id="timeVal">00:00.00</div>
-        <div>APM</div><div class="hud-text" id="apmVal">0.00</div>
-        <div>PPS</div><div class="hud-text" id="ppsVal">0.00</div>
+        <div id="apmLabel">APM</div><div class="hud-text" id="apmVal">0.00</div>
+        <div id="ppsLabel">PPS</div><div class="hud-text" id="ppsVal">0.00</div>
       </div>
     </div>
     <div class="playfield">
@@ -40,7 +40,7 @@
           <div class="label">YOU</div>
           <canvas id="boardCanvas" width="280" height="616"></canvas>
         </div>
-        <div class="board-section opponent">
+        <div class="board-section opponent" id="opponentPanel">
           <div class="label">OPPONENT</div>
           <canvas id="enemyBoard" width="140" height="280"></canvas>
         </div>
