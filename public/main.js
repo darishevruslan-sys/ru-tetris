@@ -34,6 +34,9 @@ if (!Number.isFinite(globalGameState.linesCleared)) {
 if (typeof globalGameState.matchFinished !== 'boolean') {
   globalGameState.matchFinished = false;
 }
+if (typeof globalGameState.wantsRematch !== 'boolean') {
+  globalGameState.wantsRematch = false;
+}
 if (!Number.isFinite(globalGameState.totalPiecesPlaced)) {
   globalGameState.totalPiecesPlaced = 0;
 }
@@ -186,6 +189,8 @@ function endOfMatchShowOverlay(data) {
   if (oppApmEl) oppApmEl.textContent = Number.isFinite(oppApmValue) ? oppApmValue.toFixed(2) : '0.00';
 
   overlay.classList.remove('hidden');
+  g.matchFinished = true;
+  g.isRunning = false;
 }
 
 function setupPostMatchButtons() {
@@ -194,18 +199,26 @@ function setupPostMatchButtons() {
   const btnExit = document.getElementById('btnExitToMenu');
   if (!overlay || !btnRematch || !btnExit) return;
 
-  btnRematch.addEventListener('click', () => {
+  btnRematch.addEventListener('click', async () => {
     overlay.classList.add('hidden');
     const g = window.__gameInstance;
-    if (g) {
-      g.matchFinished = false;
-      g.isDead = false;
-      g.startTimestampMs = 0;
-      g.totalPiecesPlaced = 0;
-      g.inputsCount = 0;
+    if (!g) return;
+
+    g.isDead = false;
+    g.matchFinished = false;
+    g.wantsRematch = true;
+    g.isRunning = false;
+
+    if (typeof g.stopGameLoop === 'function') {
+      g.stopGameLoop();
     }
-    if (g && typeof g.sendReadyToServer === 'function') {
-      g.sendReadyToServer(true);
+
+    if (typeof g.sendReadyToServer === 'function') {
+      try {
+        await g.sendReadyToServer(true);
+      } catch (err) {
+        console.error('Failed to send ready status for rematch', err);
+      }
     }
   });
 
@@ -213,19 +226,18 @@ function setupPostMatchButtons() {
     overlay.classList.add('hidden');
     const g = window.__gameInstance;
     if (g) {
+      g.wantsRematch = false;
       g.matchFinished = false;
-      g.isRunning = false;
       g.isDead = false;
-      g.startTimestampMs = 0;
-      g.totalPiecesPlaced = 0;
-      g.inputsCount = 0;
-      g.oppPps = 0;
-      g.oppApm = 0;
+      g.isRunning = false;
+      if (typeof g.stopGameLoop === 'function') {
+        g.stopGameLoop();
+      }
     }
-    if (g && typeof g.stopGameLoop === 'function') {
-      g.stopGameLoop();
-    }
-    if (window.__appInstance && typeof window.__appInstance.openScreen === 'function') {
+
+    if (typeof window.showMainMenu === 'function') {
+      window.showMainMenu();
+    } else if (window.__appInstance && typeof window.__appInstance.openScreen === 'function') {
       window.__appInstance.openScreen('mainMenu');
     } else {
       window.location.reload();
@@ -906,6 +918,10 @@ class MultiplayerClient {
 
   async setReady(isReady) {
     if (!this.roomCode || !this.playerId) return null;
+    const g = window.__gameInstance;
+    if (g) {
+      g.wantsRematch = !!isReady;
+    }
     const data = await this.postJSON(`${API_BASE}/api/room-ready`, {
       roomCode: this.roomCode,
       playerId: this.playerId,
@@ -987,14 +1003,22 @@ class MultiplayerClient {
       this.lastState = snapshot;
       const pendingAttackRaw = Number.isFinite(g.pendingAttackToSend) ? g.pendingAttackToSend : 0;
       const attackToSend = Math.max(0, pendingAttackRaw);
-      const deadFlag = this.shouldReportDeath();
+      const deathDetected = this.shouldReportDeath();
+      if (deathDetected && !g.isDead) {
+        g.isDead = true;
+      }
+
+      const shouldReportDead =
+        g.isDead === true &&
+        g.matchFinished === true &&
+        g.wantsRematch === false;
 
       const payload = {
         roomCode: this.roomCode,
         playerId: this.playerId,
         state: snapshot,
         attack: attackToSend,
-        dead: deadFlag
+        dead: shouldReportDead
       };
 
       resp = await this.postJSON(`${API_BASE}/api/room-state`, payload);
@@ -1002,8 +1026,10 @@ class MultiplayerClient {
         return;
       }
 
-      if (deadFlag) {
+      if (shouldReportDead) {
         this.reportedDeath = true;
+      } else if (!g.isDead) {
+        this.reportedDeath = false;
       }
 
       g.pendingAttackToSend -= attackToSend;
@@ -1045,8 +1071,7 @@ class MultiplayerClient {
         this.gameStarted = false;
         const shouldShowOverlay =
           (Number.isFinite(g.startTimestampMs) && g.startTimestampMs > 0) || g.isDead;
-        if (!g.matchFinished && shouldShowOverlay) {
-          g.matchFinished = true;
+        if (!g.matchFinished && shouldShowOverlay && !g.wantsRematch) {
           endOfMatchShowOverlay(resp);
         }
         if (g.isRunning && typeof g.stopGameLoop === 'function') {
@@ -1059,17 +1084,29 @@ class MultiplayerClient {
         g.garbageQueue = 0;
         this.reportedDeath = false;
       } else {
-        const startTime = resp.startAt || 0;
-        if (Date.now() >= startTime) {
+        const hasStartAt = typeof resp.startAt === 'number';
+        const startTime = hasStartAt ? resp.startAt : 0;
+        const startReady = hasStartAt && Date.now() >= startTime;
+        const needsStart = hasNewBag || !this.gameStarted || !g.isRunning;
+        const wantsToStart = g.wantsRematch === true;
+        if (startReady && needsStart && wantsToStart) {
           if (window.__appInstance && window.__appInstance.currentScreenId !== 'gameScreen') {
             window.__appInstance.openScreen('gameScreen');
           }
-          if ((hasNewBag || !this.gameStarted || !g.isRunning) && typeof g.startMultiplayerRoundFromServer === 'function') {
+          if (typeof g.startMultiplayerRoundFromServer === 'function') {
+            g.totalPiecesPlaced = 0;
+            g.inputsCount = 0;
+            g.linesCleared = 0;
+            g.startTimestampMs = Date.now();
+            g.isDead = false;
+            g.matchFinished = false;
+            g.isRunning = true;
             g.startMultiplayerRoundFromServer(resp);
           }
           this.gameStarted = true;
           this.reportedDeath = false;
           g.matchFinished = false;
+          g.wantsRematch = false;
         } else {
           this.gameStarted = false;
         }
@@ -2431,6 +2468,7 @@ class App {
       g.inputsCount = 0;
       g.startTimestampMs = Date.now();
       g.matchFinished = false;
+      g.wantsRematch = false;
       g.oppPps = 0;
       g.oppApm = 0;
       const overlay = document.getElementById('postMatchOverlay');
