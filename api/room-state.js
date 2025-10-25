@@ -1,4 +1,9 @@
-import { updateState, getRoom, persistRoom } from "./_rooms.js";
+import {
+  updateState,
+  getRoom,
+  persistRoom,
+  generateSevenBagSequence,
+} from "./_rooms.js";
 
 function readBody(req) {
   if (typeof req.body === "string") {
@@ -47,6 +52,13 @@ export default async function handler(req, res) {
   }
   if (!room.ready) room.ready = {};
 
+  if (!room.bag || !Array.isArray(room.bag) || room.bag.length === 0) {
+    room.bag = generateSevenBagSequence();
+    room.bagVersion = room.bagVersion ? room.bagVersion + 1 : 1;
+  } else if (typeof room.bagVersion !== "number") {
+    room.bagVersion = 1;
+  }
+
   if (dead) {
     room.roundActive = false;
     room.startAt = null;
@@ -55,20 +67,28 @@ export default async function handler(req, res) {
     }
   }
 
-  // gather opponent snapshots and reset their attack
+  // gather opponent snapshots and consume pending garbage
+  if (!room.snapshots) room.snapshots = {};
+
+  const players = Array.isArray(room.players) ? room.players : [];
   const opponents = {};
-  for (const pid of room.players) {
+  let incomingGarbage = 0;
+
+  for (const pid of players) {
     const snap = room.snapshots[pid];
     if (!snap) continue;
 
-    if (pid !== playerId) {
-      opponents[pid] = {
-        state: snap.state,
-        attack: snap.attack || 0,
-      };
-      // consume opponent's outgoing attack
-      snap.attack = 0;
+    if (pid === playerId) {
+      continue;
     }
+
+    opponents[pid] = {
+      state: snap.state,
+    };
+
+    const pending = Math.max(0, Math.floor(Number(snap.attackPending) || 0));
+    incomingGarbage += pending;
+    snap.attackPending = 0;
   }
 
   await persistRoom(room);
@@ -78,6 +98,9 @@ export default async function handler(req, res) {
     players: room.players,
     you: playerId,
     opponents,
+    bag: room.bag || [],
+    bagVersion: room.bagVersion || 1,
+    incomingGarbage,
     startAt: room.startAt || null,
     roundActive: !!room.roundActive,
     ready: room.ready || {},
