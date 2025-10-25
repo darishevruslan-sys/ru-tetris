@@ -31,6 +31,24 @@ if (typeof globalGameState.isDead !== 'boolean') {
 if (!Number.isFinite(globalGameState.linesCleared)) {
   globalGameState.linesCleared = 0;
 }
+if (typeof globalGameState.matchFinished !== 'boolean') {
+  globalGameState.matchFinished = false;
+}
+if (!Number.isFinite(globalGameState.totalPiecesPlaced)) {
+  globalGameState.totalPiecesPlaced = 0;
+}
+if (!Number.isFinite(globalGameState.startTimestampMs)) {
+  globalGameState.startTimestampMs = 0;
+}
+if (!Number.isFinite(globalGameState.inputsCount)) {
+  globalGameState.inputsCount = 0;
+}
+if (!Number.isFinite(globalGameState.oppPps)) {
+  globalGameState.oppPps = 0;
+}
+if (!Number.isFinite(globalGameState.oppApm)) {
+  globalGameState.oppApm = 0;
+}
 if (typeof globalGameState.startNewRound !== 'function') {
   globalGameState.startNewRound = () => {};
 }
@@ -109,6 +127,113 @@ function applyUIMode() {
     }
   }
 }
+
+function incrementInputCount() {
+  const g = window.__gameInstance;
+  if (!g) return;
+  const current = Number.isFinite(g.inputsCount) ? g.inputsCount : 0;
+  g.inputsCount = current + 1;
+}
+
+function getOpponentStatsFromPayload(payload) {
+  if (!payload || !payload.opponents) return null;
+  const entries = Object.values(payload.opponents);
+  for (const entry of entries) {
+    if (!entry) continue;
+    if (entry.state && entry.state.stats) {
+      return entry.state.stats;
+    }
+    if (entry.stats) {
+      return entry.stats;
+    }
+  }
+  return null;
+}
+
+function endOfMatchShowOverlay(data) {
+  const g = window.__gameInstance;
+  if (!g) return;
+
+  const now = Date.now();
+  const startTs = Number.isFinite(g.startTimestampMs) && g.startTimestampMs > 0 ? g.startTimestampMs : now;
+  const durationSec = Math.max(0, (now - startTs) / 1000);
+  const piecesPlaced = Number.isFinite(g.totalPiecesPlaced) ? g.totalPiecesPlaced : 0;
+  const inputs = Number.isFinite(g.inputsCount) ? g.inputsCount : 0;
+  const yourPps = durationSec > 0 ? piecesPlaced / durationSec : 0;
+  const yourApm = durationSec > 0 ? (inputs / durationSec) * 60 : 0;
+  const iWon = !g.isDead;
+  const winnerText = iWon ? 'YOU' : 'OPPONENT';
+
+  const oppStats = getOpponentStatsFromPayload(data);
+  const oppPpsValue = oppStats && Number.isFinite(oppStats.pps) ? oppStats.pps : (Number.isFinite(g.oppPps) ? g.oppPps : 0);
+  const oppApmValue = oppStats && Number.isFinite(oppStats.apm) ? oppStats.apm : (Number.isFinite(g.oppApm) ? g.oppApm : 0);
+
+  const overlay = document.getElementById('postMatchOverlay');
+  if (!overlay) return;
+
+  const titleEl = document.getElementById('matchResultTitle');
+  const winnerEl = document.getElementById('matchWinnerName');
+  const yourPpsEl = document.getElementById('matchYourPps');
+  const yourApmEl = document.getElementById('matchYourApm');
+  const oppPpsEl = document.getElementById('matchOppPps');
+  const oppApmEl = document.getElementById('matchOppApm');
+
+  if (titleEl) titleEl.textContent = 'MATCH OVER';
+  if (winnerEl) winnerEl.textContent = winnerText;
+  if (yourPpsEl) yourPpsEl.textContent = yourPps.toFixed(2);
+  if (yourApmEl) yourApmEl.textContent = yourApm.toFixed(2);
+  if (oppPpsEl) oppPpsEl.textContent = Number.isFinite(oppPpsValue) ? oppPpsValue.toFixed(2) : '0.00';
+  if (oppApmEl) oppApmEl.textContent = Number.isFinite(oppApmValue) ? oppApmValue.toFixed(2) : '0.00';
+
+  overlay.classList.remove('hidden');
+}
+
+function setupPostMatchButtons() {
+  const overlay = document.getElementById('postMatchOverlay');
+  const btnRematch = document.getElementById('btnRematch');
+  const btnExit = document.getElementById('btnExitToMenu');
+  if (!overlay || !btnRematch || !btnExit) return;
+
+  btnRematch.addEventListener('click', () => {
+    overlay.classList.add('hidden');
+    const g = window.__gameInstance;
+    if (g) {
+      g.matchFinished = false;
+      g.isDead = false;
+      g.startTimestampMs = 0;
+      g.totalPiecesPlaced = 0;
+      g.inputsCount = 0;
+    }
+    if (g && typeof g.sendReadyToServer === 'function') {
+      g.sendReadyToServer(true);
+    }
+  });
+
+  btnExit.addEventListener('click', () => {
+    overlay.classList.add('hidden');
+    const g = window.__gameInstance;
+    if (g) {
+      g.matchFinished = false;
+      g.isRunning = false;
+      g.isDead = false;
+      g.startTimestampMs = 0;
+      g.totalPiecesPlaced = 0;
+      g.inputsCount = 0;
+      g.oppPps = 0;
+      g.oppApm = 0;
+    }
+    if (g && typeof g.stopGameLoop === 'function') {
+      g.stopGameLoop();
+    }
+    if (window.__appInstance && typeof window.__appInstance.openScreen === 'function') {
+      window.__appInstance.openScreen('mainMenu');
+    } else {
+      window.location.reload();
+    }
+  });
+}
+
+setupPostMatchButtons();
 
 const LOCAL_PIECES = ['I', 'J', 'L', 'O', 'S', 'T', 'Z'];
 
@@ -918,19 +1043,18 @@ class MultiplayerClient {
       if (!this.roundActive) {
         this.startAt = null;
         this.gameStarted = false;
-        g.isRunning = false;
-        g.isDead = false;
-        if (typeof g.stopGameLoop === 'function') {
+        const shouldShowOverlay =
+          (Number.isFinite(g.startTimestampMs) && g.startTimestampMs > 0) || g.isDead;
+        if (!g.matchFinished && shouldShowOverlay) {
+          g.matchFinished = true;
+          endOfMatchShowOverlay(resp);
+        }
+        if (g.isRunning && typeof g.stopGameLoop === 'function') {
           g.stopGameLoop();
         } else if (g.state === 'running' && typeof g.finish === 'function') {
           g.finish('aborted');
         }
-        if (typeof g.showLobbyScreen === 'function') {
-          g.showLobbyScreen();
-        }
-        if (typeof g.renderOpponent === 'function') {
-          g.renderOpponent(null);
-        }
+        g.isRunning = false;
         g.pendingAttackToSend = 0;
         g.garbageQueue = 0;
         this.reportedDeath = false;
@@ -943,12 +1067,9 @@ class MultiplayerClient {
           if ((hasNewBag || !this.gameStarted || !g.isRunning) && typeof g.startMultiplayerRoundFromServer === 'function') {
             g.startMultiplayerRoundFromServer(resp);
           }
-          if (!g.isRunning && typeof g.startNewRound === 'function') {
-            g.startNewRound();
-            g.isRunning = true;
-          }
           this.gameStarted = true;
           this.reportedDeath = false;
+          g.matchFinished = false;
         } else {
           this.gameStarted = false;
         }
@@ -971,9 +1092,16 @@ class MultiplayerClient {
           } else if (typeof g.renderOpponent === 'function') {
             g.renderOpponent(null);
           }
+          const oppStats = firstOpp.state.stats || firstOpp.stats || null;
+          if (oppStats) {
+            g.oppPps = Number.isFinite(oppStats.pps) ? oppStats.pps : 0;
+            g.oppApm = Number.isFinite(oppStats.apm) ? oppStats.apm : 0;
+          }
         }
       } else if (typeof g.renderOpponent === 'function') {
         g.renderOpponent(null);
+        g.oppPps = 0;
+        g.oppApm = 0;
       }
 
       if (typeof this.remoteStateHandler === 'function') {
@@ -1302,6 +1430,11 @@ class Game {
     if (!this.active) return;
     const toppedOut = this.board.place(this.active);
     this.stats.addPiece();
+    const g = window.__gameInstance;
+    if (g) {
+      const currentPieces = Number.isFinite(g.totalPiecesPlaced) ? g.totalPiecesPlaced : 0;
+      g.totalPiecesPlaced = currentPieces + 1;
+    }
     if (toppedOut || this.board.isToppedOut()) {
       this.combo = 0;
       this.b2b = 0;
@@ -1322,9 +1455,9 @@ class Game {
     let attack = 0;
     if (lines > 0) {
       this.stats.addLines(lines);
-      const g = window.__gameInstance;
       if (g) {
-        g.linesCleared = this.stats.lines;
+        const previousLines = Number.isFinite(g.linesCleared) ? g.linesCleared : 0;
+        g.linesCleared = previousLines + lines;
       }
       const spinType = spinResult.type || 'none';
       const baseAttack = this.calculateAttack(lines, spinType, this.combo, this.b2b);
@@ -1339,7 +1472,6 @@ class Game {
       attack = totalAttack;
       if (attack > 0) {
         this.stats.addAttack(attack);
-        const g = window.__gameInstance;
         if (g) {
           const current = Number.isFinite(g.pendingAttackToSend)
             ? g.pendingAttackToSend
@@ -1755,7 +1887,7 @@ class InputManager {
         this.lastDir = -1;
         this.dasTimer = 0;
         this.arrTimer = 0;
-        this.game.move(-1);
+        if (this.game.move(-1)) incrementInputCount();
         break;
       case 'moveRight':
         if (e.repeat) return;
@@ -1763,7 +1895,7 @@ class InputManager {
         this.lastDir = 1;
         this.dasTimer = 0;
         this.arrTimer = 0;
-        this.game.move(1);
+        if (this.game.move(1)) incrementInputCount();
         break;
       case 'softDrop':
         this.softDrop = true;
@@ -1771,19 +1903,21 @@ class InputManager {
         break;
       case 'hardDrop':
         if (e.repeat) return;
+        const hadActive = !!(this.game && this.game.active);
         this.game.hardDrop();
+        if (hadActive) incrementInputCount();
         break;
       case 'rotateCW':
         if (e.repeat) return;
-        this.game.rotateCW();
+        if (this.game.rotateCW()) incrementInputCount();
         break;
       case 'rotateCCW':
         if (e.repeat) return;
-        this.game.rotateCCW();
+        if (this.game.rotateCCW()) incrementInputCount();
         break;
       case 'rotate180':
         if (e.repeat) return;
-        this.game.rotate180();
+        if (this.game.rotate180()) incrementInputCount();
         break;
       case 'hold':
         if (e.repeat) return;
@@ -1826,7 +1960,7 @@ class InputManager {
     this.dasTimer += dt;
     if (this.dasTimer < this.config.das) return;
     if (this.config.arr === 0) {
-      this.game.move(dir);
+      if (this.game.move(dir)) incrementInputCount();
       return;
     }
     this.arrTimer += dt;
@@ -1835,6 +1969,7 @@ class InputManager {
         this.arrTimer = 0;
         break;
       }
+      incrementInputCount();
       this.arrTimer -= this.config.arr;
     }
   }
@@ -2210,6 +2345,7 @@ class App {
     this.gameMode = initialMode;
     window.__appInstance.gameMode = initialMode;
     this.currentScreenId = null;
+    g.sendReadyToServer = (ready) => this.multiplayer.setReady(ready);
     const hud = {
       lines: document.getElementById('linesVal'),
       time: document.getElementById('timeVal'),
@@ -2291,6 +2427,16 @@ class App {
       g.isRunning = true;
       g.isDead = false;
       g.linesCleared = 0;
+      g.totalPiecesPlaced = 0;
+      g.inputsCount = 0;
+      g.startTimestampMs = Date.now();
+      g.matchFinished = false;
+      g.oppPps = 0;
+      g.oppApm = 0;
+      const overlay = document.getElementById('postMatchOverlay');
+      if (overlay) {
+        overlay.classList.add('hidden');
+      }
     }
     this.game.startMultiplayerRound();
   }
@@ -2371,6 +2517,9 @@ class App {
     this.openScreen('gameScreen');
   }
   showResults(summary) {
+    if (this.gameMode === 'multi') {
+      return;
+    }
     const overlay = document.getElementById('resultOverlay');
     const resultStats = document.getElementById('resultStats');
     resultStats.innerHTML = `LINES: ${summary.lines}<br>TIME: ${formatTime(summary.time)}<br>APM: ${summary.apm.toFixed(2)}<br>PPS: ${summary.pps.toFixed(2)}`;

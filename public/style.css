@@ -21,11 +21,21 @@ button:hover{background:#27335d}
 .panel-title{font-size:14px;letter-spacing:2px;color:#8a94c9}
 canvas{background:#0f1628;border-radius:10px}
 #boardCanvas{border:2px solid #1d2745}
-.overlay{position:fixed;inset:0;background:rgba(5,7,15,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;font-size:18px;text-align:center;z-index:10}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;font-family:system-ui,sans-serif;color:#fff}
 .overlay.hidden{display:none}
 .hidden{display:none!important}
 .overlay .title{font-size:28px;letter-spacing:4px}
 .overlay button{font-size:18px}
+.overlay-card{background:#111a2b;border:1px solid #2a3550;border-radius:12px;padding:16px 20px;min-width:260px;max-width:320px;box-shadow:0 20px 60px rgba(0,0,0,.8)}
+.overlay-title{text-align:center;font-size:14px;letter-spacing:.08em;font-weight:600;color:#9bb4ff;margin-bottom:12px}
+.overlay-stats{font-size:13px;line-height:1.4;margin-bottom:16px}
+.stat-row{display:flex;justify-content:space-between;margin-bottom:4px}
+.stat-row .label{color:#6b7599}
+.stat-row .value{color:#fff;font-weight:500}
+.overlay-buttons{display:flex;gap:8px;justify-content:center}
+.overlay-btn{background:#2a3550;border:1px solid #3a4670;border-radius:6px;padding:6px 10px;font-size:13px;cursor:pointer;color:#cfd8ff}
+.overlay-btn-primary{background:#3b54ff;border-color:#3b54ff;color:#fff}
+.overlay-btn:active{transform:translateY(1px)}
 .settings-list{width:100%;max-width:520px;display:flex;flex-direction:column;gap:12px}
 .settings-row{display:flex;align-items:center;justify-content:space-between;background:#0b1020;padding:16px;border-radius:10px}
 .settings-row.listening{outline:2px solid #5dd9ff}
