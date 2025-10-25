@@ -776,6 +776,17 @@ class MultiplayerClient {
         }
       }
 
+      if (window.__gameInstance && typeof window.__gameInstance.renderOpponent === 'function') {
+        const oppIds = Object.keys(opponents);
+        if (oppIds.length > 0) {
+          const opp = opponents[oppIds[0]];
+          const matrix = opp && opp.state ? opp.state.matrix : null;
+          window.__gameInstance.renderOpponent(matrix);
+        } else {
+          window.__gameInstance.renderOpponent(null);
+        }
+      }
+
       if (typeof this.remoteStateHandler === 'function') {
         this.remoteStateHandler(firstOpponentState || null);
       }
@@ -1819,6 +1830,45 @@ class App {
     this.screenManager = new ScreenManager();
     this.game = new Game(CONFIG);
     window.__gameInstance = this.game;
+    window.__gameInstance.renderOpponent = function renderOpponent(matrix) {
+      const canvas = document.getElementById('enemyBoard');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#0b1324';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      if (!Array.isArray(matrix) || matrix.length === 0) {
+        return;
+      }
+
+      const rows = matrix.length;
+      const cols = Array.isArray(matrix[0]) ? matrix[0].length : 0;
+      if (!rows || !cols) {
+        return;
+      }
+
+      const cellW = canvas.width / cols;
+      const cellH = canvas.height / rows;
+
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+
+      for (let y = 0; y < rows; y++) {
+        const row = Array.isArray(matrix[y]) ? matrix[y] : [];
+        for (let x = 0; x < cols; x++) {
+          const cell = row[x];
+          if (cell) {
+            ctx.fillStyle = COLORS[cell] || '#666';
+            ctx.fillRect(x * cellW, y * cellH, cellW, cellH);
+          }
+          ctx.strokeRect(x * cellW, y * cellH, cellW, cellH);
+        }
+      }
+    };
+    window.__gameInstance.renderOpponent(null);
     this.multiplayer = new MultiplayerClient();
     this.multiplayer.configure(CONFIG);
     this.game.attachMultiplayer(this.multiplayer);
