@@ -101,6 +101,40 @@
   </div>
 </div>
 
+<div id="postMatchOverlay" class="overlay hidden">
+  <div class="overlay-card">
+    <div class="overlay-title" id="matchResultTitle">RESULT</div>
+
+    <div class="overlay-stats">
+      <div class="stat-row">
+        <div class="label">Winner:</div>
+        <div class="value" id="matchWinnerName">YOU</div>
+      </div>
+      <div class="stat-row">
+        <div class="label">Your PPS:</div>
+        <div class="value" id="matchYourPps">0.00</div>
+      </div>
+      <div class="stat-row">
+        <div class="label">Your APM:</div>
+        <div class="value" id="matchYourApm">0.00</div>
+      </div>
+      <div class="stat-row">
+        <div class="label">Opp PPS:</div>
+        <div class="value" id="matchOppPps">0.00</div>
+      </div>
+      <div class="stat-row">
+        <div class="label">Opp APM:</div>
+        <div class="value" id="matchOppApm">0.00</div>
+      </div>
+    </div>
+
+    <div class="overlay-buttons">
+      <button id="btnRematch" class="overlay-btn overlay-btn-primary">Rematch</button>
+      <button id="btnExitToMenu" class="overlay-btn">Main Menu</button>
+    </div>
+  </div>
+</div>
+
 <div id="resultOverlay" class="overlay hidden">
   <div class="title" id="resultTitle"></div>
   <div id="resultStats"></div>
