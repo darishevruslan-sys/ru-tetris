@@ -34,6 +34,19 @@ async function saveRoom(room) {
   await redis.set("room:" + room.code, room);
 }
 
+function ensureRoomBag(room) {
+  if (!room) return;
+
+  const hasBag = Array.isArray(room.bag) && room.bag.length > 0;
+  if (!hasBag) {
+    room.bag = generateSevenBagSequence();
+    room.bagVersion =
+      typeof room.bagVersion === "number" ? room.bagVersion + 1 : 1;
+  } else if (typeof room.bagVersion !== "number") {
+    room.bagVersion = 1;
+  }
+}
+
 export async function persistRoom(room) {
   await saveRoom(room);
   return room;
@@ -86,16 +99,15 @@ export async function joinRoom(code, playerId) {
     room.roundActive = false;
   }
 
+  if (!Array.isArray(room.players)) {
+    room.players = [];
+  }
+
   if (!room.players.includes(playerId)) {
     room.players.push(playerId);
   }
 
-  if (!room.bag || !Array.isArray(room.bag) || room.bag.length === 0) {
-    room.bag = generateSevenBagSequence();
-    room.bagVersion = room.bagVersion ? room.bagVersion + 1 : 1;
-  } else if (typeof room.bagVersion !== "number") {
-    room.bagVersion = 1;
-  }
+  ensureRoomBag(room);
 
   if (!room.snapshots) room.snapshots = {};
   if (!room.snapshots[playerId]) {
@@ -123,29 +135,33 @@ export async function updateState(code, playerId, state, attack = 0) {
     room.roundActive = false;
   }
 
-  if (!room.bag || !Array.isArray(room.bag) || room.bag.length === 0) {
-    room.bag = generateSevenBagSequence();
-    room.bagVersion = room.bagVersion ? room.bagVersion + 1 : 1;
-  } else if (typeof room.bagVersion !== "number") {
-    room.bagVersion = 1;
-  }
+  ensureRoomBag(room);
 
   const atk = Math.max(0, Math.min(20, Math.floor(Number(attack) || 0)));
 
   if (!room.snapshots) room.snapshots = {};
+  if (!Array.isArray(room.players)) {
+    room.players = [];
+  }
+  if (!room.players.includes(playerId)) {
+    room.players.push(playerId);
+  }
+
   const existingSnapshot = room.snapshots[playerId] || {
     state: {},
     ts: Date.now(),
     attackPending: 0,
   };
 
-  existingSnapshot.state = state;
+  existingSnapshot.state = state && typeof state === "object" ? state : {};
   existingSnapshot.ts = Date.now();
+  const currentPending = Math.max(
+    0,
+    Math.floor(Number(existingSnapshot.attackPending) || 0),
+  );
+  existingSnapshot.attackPending = currentPending;
   if (atk > 0) {
-    existingSnapshot.attackPending =
-      (existingSnapshot.attackPending || 0) + atk;
-  } else if (typeof existingSnapshot.attackPending !== "number") {
-    existingSnapshot.attackPending = 0;
+    existingSnapshot.attackPending += atk;
   }
 
   room.snapshots[playerId] = existingSnapshot;
