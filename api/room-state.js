@@ -1,4 +1,4 @@
-import { updateState, getRoom } from "./_rooms.js";
+import { updateState, getRoom, persistRoom } from "./_rooms.js";
 
 function readBody(req) {
   if (typeof req.body === "string") {
@@ -19,6 +19,7 @@ export default async function handler(req, res) {
   const playerId = body.playerId;
   const state = body.state;
   const attack = body.attack || 0;
+  const dead = body.dead === true;
 
   if (!roomCode || !playerId || !state) {
     res.status(400).json({
@@ -36,6 +37,23 @@ export default async function handler(req, res) {
 
   // reload full room after update
   const room = await getRoom(roomCode);
+  if (!room) {
+    res.status(404).json({ ok: false, error: "room not found" });
+    return;
+  }
+
+  if (typeof room.roundActive !== "boolean") {
+    room.roundActive = false;
+  }
+  if (!room.ready) room.ready = {};
+
+  if (dead) {
+    room.roundActive = false;
+    room.startAt = null;
+    for (const pid of room.players || []) {
+      room.ready[pid] = false;
+    }
+  }
 
   // gather opponent snapshots and reset their attack
   const opponents = {};
@@ -53,12 +71,7 @@ export default async function handler(req, res) {
     }
   }
 
-  // save room after zeroing opponents' attack
-  // we don't have a direct saveRoom exported, so the simplest
-  // way to persist mutated attack=0 is to call updateState again
-  // for the current player with attack=0 and same state,
-  // which triggers saveRoom().
-  await updateState(roomCode, playerId, state, 0);
+  await persistRoom(room);
 
   res.status(200).json({
     ok: true,
@@ -66,6 +79,7 @@ export default async function handler(req, res) {
     you: playerId,
     opponents,
     startAt: room.startAt || null,
+    roundActive: !!room.roundActive,
     ready: room.ready || {},
   });
 }
