@@ -35,7 +35,16 @@
         <div class="panel-title">HOLD</div>
         <canvas id="holdCanvas" width="140" height="140"></canvas>
       </div>
-      <canvas id="boardCanvas" width="280" height="616"></canvas>
+      <div class="board-wrapper">
+        <div class="board-section you">
+          <div class="label">YOU</div>
+          <canvas id="boardCanvas" width="280" height="616"></canvas>
+        </div>
+        <div class="board-section opponent">
+          <div class="label">OPPONENT</div>
+          <canvas id="enemyBoard" width="140" height="280"></canvas>
+        </div>
+      </div>
       <div class="panel">
         <div class="panel-title">NEXT</div>
         <canvas id="nextCanvas" width="140" height="420"></canvas>
