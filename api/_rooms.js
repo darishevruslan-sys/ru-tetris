@@ -34,7 +34,7 @@ async function saveRoom(room) {
   await redis.set("room:" + room.code, room);
 }
 
-function ensureRoomBag(room) {
+export function ensureRoomBag(room) {
   if (!room) return;
 
   const hasBag = Array.isArray(room.bag) && room.bag.length > 0;
@@ -87,6 +87,7 @@ export async function createRoom(playerId) {
     createdAt: Date.now(),
   };
 
+  ensureRoomBag(room);
   await saveRoom(room);
   return room;
 }
@@ -153,15 +154,14 @@ export async function updateState(code, playerId, state, attack = 0) {
     attackPending: 0,
   };
 
-  existingSnapshot.state = state && typeof state === "object" ? state : {};
+  existingSnapshot.state =
+    state && typeof state === "object" ? state : {};
   existingSnapshot.ts = Date.now();
-  const currentPending = Math.max(
-    0,
-    Math.floor(Number(existingSnapshot.attackPending) || 0),
-  );
-  existingSnapshot.attackPending = currentPending;
   if (atk > 0) {
-    existingSnapshot.attackPending += atk;
+    existingSnapshot.attackPending =
+      (Number(existingSnapshot.attackPending) || 0) + atk;
+  } else if (typeof existingSnapshot.attackPending !== "number") {
+    existingSnapshot.attackPending = 0;
   }
 
   room.snapshots[playerId] = existingSnapshot;
@@ -187,15 +187,14 @@ export async function setReady(code, playerId, readyBool) {
     room.roundActive = true;
   } else {
     room.roundActive = false;
-    if (!allReady) {
-      room.startAt = null;
-    }
+    room.startAt = null;
   }
 
+  ensureRoomBag(room);
   await saveRoom(room);
   return room;
 }
 
 export async function getRoom(code) {
-  return await loadRoom(code);
+  return loadRoom(code);
 }
