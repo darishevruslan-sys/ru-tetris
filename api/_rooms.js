@@ -16,6 +16,11 @@ async function saveRoom(room) {
   await redis.set("room:" + room.code, room);
 }
 
+export async function persistRoom(room) {
+  await saveRoom(room);
+  return room;
+}
+
 function genCode() {
   const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
   let out = "";
@@ -39,6 +44,7 @@ export async function createRoom(playerId) {
     snapshots: {}, // { [pid]: { state, attack, ts } }
     ready: {},
     startAt: null,
+    roundActive: false,
     createdAt: Date.now(),
   };
 
@@ -49,6 +55,10 @@ export async function createRoom(playerId) {
 export async function joinRoom(code, playerId) {
   const room = await loadRoom(code);
   if (!room) return null;
+
+  if (typeof room.roundActive !== "boolean") {
+    room.roundActive = false;
+  }
 
   if (!room.players.includes(playerId)) {
     room.players.push(playerId);
@@ -61,6 +71,10 @@ export async function joinRoom(code, playerId) {
 export async function updateState(code, playerId, state, attack = 0) {
   const room = await loadRoom(code);
   if (!room) return null;
+
+  if (typeof room.roundActive !== "boolean") {
+    room.roundActive = false;
+  }
 
   const atk = Math.max(0, Math.min(20, Math.floor(Number(attack) || 0)));
 
@@ -81,14 +95,19 @@ export async function setReady(code, playerId, readyBool) {
   if (!room.ready) room.ready = {};
   room.ready[playerId] = !!readyBool;
 
-  // if 2 players are ready and there's no startAt yet -> set synchronized start
-  if (
-    room.players.length >= 2 &&
-    room.ready[room.players[0]] &&
-    room.ready[room.players[1]] &&
-    !room.startAt
-  ) {
+  const players = room.players || [];
+  const allReady =
+    players.length >= 2 &&
+    players.every(pid => room.ready[pid]);
+
+  if (allReady) {
     room.startAt = Date.now() + 1500;
+    room.roundActive = true;
+  } else {
+    room.roundActive = false;
+    if (!allReady) {
+      room.startAt = null;
+    }
   }
 
   await saveRoom(room);

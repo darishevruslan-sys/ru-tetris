@@ -611,6 +611,8 @@ class MultiplayerClient {
     this.gameStarted = false;
     this.readyState = {};
     this.syncInFlight = false;
+    this.roundActive = false;
+    this.reportedDeath = false;
   }
 
   configure(config) {
@@ -642,6 +644,8 @@ class MultiplayerClient {
     this.startAt = null;
     this.gameStarted = false;
     this.readyState = {};
+    this.roundActive = false;
+    this.reportedDeath = false;
     this.startSyncLoop();
     this.emitRoomInfo();
     return data;
@@ -658,6 +662,8 @@ class MultiplayerClient {
     this.startAt = null;
     this.gameStarted = false;
     this.readyState = {};
+    this.roundActive = false;
+    this.reportedDeath = false;
     this.startSyncLoop();
     this.emitRoomInfo();
     return data;
@@ -673,6 +679,11 @@ class MultiplayerClient {
     if (data && data.ok) {
       this.startAt = data.startAt || null;
       this.readyState = data.ready ? { ...data.ready } : {};
+      if (typeof data.roundActive === 'boolean') {
+        this.roundActive = data.roundActive;
+      } else if (!this.startAt) {
+        this.roundActive = false;
+      }
       if (!this.startAt) {
         this.gameStarted = false;
       }
@@ -703,9 +714,24 @@ class MultiplayerClient {
         roomCode: this.roomCode,
         you: this.playerId,
         startAt: this.startAt,
+        roundActive: this.roundActive,
         ready: { ...this.readyState }
       });
     }
+  }
+
+  shouldReportDeath() {
+    if (this.reportedDeath) return false;
+    const game = window.__gameInstance;
+    if (!game) return false;
+    if (typeof game.getLastFinishReason === 'function') {
+      if (game.state === 'finished') {
+        const reason = game.getLastFinishReason();
+        return reason === 'toppedOut' || reason === 'clear40';
+      }
+      return false;
+    }
+    return game.state === 'finished';
   }
 
   async syncOnce() {
@@ -719,46 +745,85 @@ class MultiplayerClient {
       const snapshot = window.__gameInstance.getNetworkState
         ? window.__gameInstance.getNetworkState()
         : this.lastState || {};
-      if (this.gameStarted && window.__gameInstance.state !== 'running') {
+      if (
+        this.gameStarted &&
+        window.__gameInstance &&
+        (window.__gameInstance.isRunning === false ||
+          window.__gameInstance.state !== 'running')
+      ) {
         this.gameStarted = false;
       }
       this.lastState = snapshot;
       const attackToSend = this.lastAttack || 0;
+      const deadFlag = this.shouldReportDeath();
 
       resp = await this.postJSON(`${API_BASE}/api/room-state`, {
         roomCode: this.roomCode,
         playerId: this.playerId,
         state: snapshot,
-        attack: attackToSend
+        attack: attackToSend,
+        dead: deadFlag
       });
       if (!resp || !resp.ok) {
         return;
+      }
+
+      if (deadFlag) {
+        this.reportedDeath = true;
       }
 
       this.lastAttack = 0;
 
       if (resp.startAt !== undefined) {
         this.startAt = resp.startAt || null;
-        if (!this.startAt) {
-          this.gameStarted = false;
-        }
       }
 
       if (resp.ready) {
         this.readyState = { ...resp.ready };
       }
 
-      this.emitRoomInfo();
-
-      if (!this.gameStarted && this.startAt && Date.now() >= this.startAt) {
-        if (window.__appInstance && window.__appInstance.currentScreenId !== 'gameScreen') {
-          window.__appInstance.openScreen('gameScreen');
-        }
-        if (window.__gameInstance && window.__gameInstance.state !== 'running') {
-          window.__gameInstance.start();
-        }
-        this.gameStarted = true;
+      if (typeof resp.roundActive === 'boolean') {
+        this.roundActive = resp.roundActive;
+      } else if (!this.startAt) {
+        this.roundActive = false;
       }
+
+      if (!this.roundActive) {
+        this.startAt = null;
+        this.gameStarted = false;
+        if (window.__gameInstance) {
+          if (typeof window.__gameInstance.stopGameLoop === 'function') {
+            window.__gameInstance.stopGameLoop();
+          } else if (window.__gameInstance.state === 'running') {
+            window.__gameInstance.finish && window.__gameInstance.finish('aborted');
+          }
+          if (typeof window.__gameInstance.showLobbyScreen === 'function') {
+            window.__gameInstance.showLobbyScreen();
+          }
+        }
+        this.reportedDeath = false;
+      } else {
+        const readyToStart = this.startAt && Date.now() >= this.startAt;
+        if (readyToStart && !this.gameStarted) {
+          if (
+            window.__appInstance &&
+            window.__appInstance.currentScreenId !== 'gameScreen'
+          ) {
+            window.__appInstance.openScreen('gameScreen');
+          }
+          if (window.__gameInstance) {
+            if (typeof window.__gameInstance.startNewRound === 'function') {
+              window.__gameInstance.startNewRound();
+            } else if (window.__gameInstance.state !== 'running') {
+              window.__gameInstance.start();
+            }
+          }
+          this.gameStarted = true;
+          this.reportedDeath = false;
+        }
+      }
+
+      this.emitRoomInfo();
 
       const opponents = resp.opponents || {};
       let firstOpponentState = null;
@@ -831,6 +896,8 @@ class MultiplayerClient {
     this.readyState = {};
     this.lastAttack = 0;
     this.lastState = null;
+    this.roundActive = false;
+    this.reportedDeath = false;
     this.roomCode = null;
     this.emitRoomInfo();
   }
@@ -845,6 +912,8 @@ class Game {
     this.random = Math.random.bind(Math);
     this.multiplayerClient = null;
     this.lastSharedState = null;
+    this.isRunning = false;
+    this.lastFinishReason = null;
     this.reset();
   }
   reset() {
@@ -862,6 +931,8 @@ class Game {
     this.pendingGarbage = 0;
     this.lastClear = null;
     this.lastSharedState = null;
+    this.isRunning = false;
+    this.lastFinishReason = null;
   }
   setCallbacks(cb) {
     this.callbacks = cb || {};
@@ -875,6 +946,8 @@ class Game {
     this.stats.start();
     this.board.reset();
     this.state = 'running';
+    this.isRunning = true;
+    this.lastFinishReason = null;
     this.ensureQueue();
     this.spawnNext();
     if (this.callbacks.state) this.callbacks.state(this.state);
@@ -935,7 +1008,7 @@ class Game {
     this.pendingGarbage = 0;
     this.board.addGarbage(lines);
     if (this.board.isToppedOut()) {
-      this.finish();
+      this.finish('toppedOut');
     }
   }
   spawnNext(skipGarbage = false) {
@@ -944,7 +1017,7 @@ class Game {
     const type = this.takeFromQueue();
     const piece = this.createPiece(type);
     if (!this.board.isValid(piece)) {
-      this.finish();
+      this.finish('toppedOut');
       return;
     }
     this.active = piece;
@@ -960,7 +1033,7 @@ class Game {
       this.holdPiece = current;
       const piece = this.createPiece(nextType);
       if (!this.board.isValid(piece)) {
-        this.finish();
+        this.finish('toppedOut');
         return;
       }
       this.active = piece;
@@ -1064,7 +1137,7 @@ class Game {
       this.fallAcc = 0;
       this.softDrop = false;
       this.areTimer = 0;
-      this.finish();
+      this.finish('toppedOut');
       return;
     }
     const spinResult = this.evaluateSpin(this.active);
@@ -1104,7 +1177,7 @@ class Game {
     }
     // Detect top-out: if any blocks remain in hidden rows after lock/clear
     if (this.board.isToppedOut()) {
-      this.finish();
+      this.finish('toppedOut');
       return;
     }
     this.lastClear = { lines, spin: spinResult, perfectClear, attack };
@@ -1115,7 +1188,7 @@ class Game {
     this.softDrop = false;
     this.areTimer = lines > 0 ? this.config.lineClearAre : this.config.are;
     if (this.stats.lines >= 40) {
-      this.finish();
+      this.finish('clear40');
     }
   }
   calculateAttack(linesCleared, tSpinType, combo, b2b) {
@@ -1179,19 +1252,45 @@ class Game {
     if (this.state !== 'running') return;
     this.softDrop = active;
   }
-  finish() {
+  finish(reason = 'unknown') {
     if (this.state === 'finished') return;
     this.state = 'finished';
+    this.isRunning = false;
     this.active = null;
     this.areTimer = 0;
     this.softDrop = false;
     this.combo = 0;
     this.b2b = 0;
     this.pendingGarbage = 0;
+    this.lastFinishReason = reason;
     this.stats.stop();
     this.shareState();
     // TODO: сохранение статистики результатов на сервере
     if (this.callbacks.finish) this.callbacks.finish(this.getSummary());
+  }
+  getLastFinishReason() {
+    return this.lastFinishReason;
+  }
+  startNewRound() {
+    this.start();
+  }
+  stopGameLoop() {
+    this.stats.stop();
+    this.board.reset();
+    this.reset();
+    this.stats.reset();
+    this.shareState();
+  }
+  showLobbyScreen() {
+    if (typeof window === 'undefined') return;
+    if (window.__appInstance) {
+      window.__appInstance.hideOverlay();
+      if (window.__appInstance.currentScreenId !== 'matchScreen') {
+        window.__appInstance.openScreen('matchScreen');
+      } else if (window.__appInstance.matchmaking) {
+        window.__appInstance.matchmaking.updateStatusText();
+      }
+    }
   }
   getSummary() {
     const snap = this.stats.snapshot();
@@ -1590,6 +1689,7 @@ class MatchmakingUI {
     this.startAt = null;
     this.readyState = {};
     this.isReady = false;
+    this.roundActive = false;
     this.localRenderer = new BoardSnapshotRenderer(this.elements.localCanvas, config);
     this.remoteRenderer = new BoardSnapshotRenderer(this.elements.remoteCanvas, config);
     this.attachEvents();
@@ -1603,6 +1703,7 @@ class MatchmakingUI {
     this.client.onRoomInfo((info) => {
       this.startAt = info && typeof info.startAt === 'number' ? info.startAt : null;
       this.readyState = (info && info.ready) ? info.ready : {};
+      this.roundActive = !!(info && info.roundActive);
       const currentlyReady = this.client.isLocalReady();
       if (this.isReady !== currentlyReady) {
         this.isReady = currentlyReady;
@@ -1657,6 +1758,7 @@ class MatchmakingUI {
         this.isReady = false;
         this.startAt = null;
         this.readyState = {};
+        this.roundActive = false;
         this.onRoomReady();
       })
       .catch(() => {
@@ -1679,6 +1781,7 @@ class MatchmakingUI {
         this.isReady = false;
         this.startAt = null;
         this.readyState = {};
+        this.roundActive = false;
         this.onRoomReady();
       })
       .catch(() => {
@@ -1714,6 +1817,7 @@ class MatchmakingUI {
     this.isReady = false;
     this.startAt = null;
     this.readyState = {};
+    this.roundActive = false;
     this.elements.roomCode.textContent = '';
     this.elements.boards.classList.add('hidden');
     this.elements.readyBtn.style.display = 'none';
@@ -1726,15 +1830,20 @@ class MatchmakingUI {
   updateStatusText() {
     if (this.roomMode === 'created' || this.roomMode === 'joined') {
       let messageKey = 'match.statusPromptReady';
-      if (this.client.gameStarted) {
-        messageKey = 'match.statusInGame';
+      const now = Date.now();
+      if (this.roundActive) {
+        if (this.startAt && now < this.startAt) {
+          messageKey = 'match.statusCountdown';
+        } else {
+          messageKey = 'match.statusInGame';
+        }
       } else if (!this.isReady) {
         messageKey = 'match.statusPromptReady';
       } else if (!this.startAt) {
         messageKey = 'match.statusWaitingOpponentReady';
-      } else if (Date.now() < this.startAt) {
+      } else if (now < this.startAt) {
         messageKey = 'match.statusCountdown';
-      } else {
+      } else if (this.client.gameStarted) {
         messageKey = 'match.statusInGame';
       }
       this.elements.description.textContent = this.locale.t(messageKey);
@@ -1973,7 +2082,7 @@ class App {
     this.screenManager.show(element);
     this.currentScreenId = id;
     if (id !== 'gameScreen' && this.game.state === 'running') {
-      this.game.finish();
+      this.game.finish('aborted');
       this.hideOverlay();
     }
     if (id === 'gameScreen') {
