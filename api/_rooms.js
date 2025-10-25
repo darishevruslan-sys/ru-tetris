@@ -5,6 +5,24 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
+const PIECES = ["I", "J", "L", "O", "S", "T", "Z"];
+
+export function generateSevenBagSequence(countBags = 30) {
+  const totalBags = Math.max(1, Math.floor(countBags));
+  const result = [];
+
+  for (let i = 0; i < totalBags; i++) {
+    const bag = PIECES.slice();
+    for (let j = bag.length - 1; j > 0; j--) {
+      const k = Math.floor(Math.random() * (j + 1));
+      [bag[j], bag[k]] = [bag[k], bag[j]];
+    }
+    result.push(...bag);
+  }
+
+  return result;
+}
+
 async function loadRoom(code) {
   if (!code) return null;
   const room = await redis.get("room:" + code);
@@ -41,8 +59,16 @@ export async function createRoom(playerId) {
   const room = {
     code,
     players: [playerId],
-    snapshots: {}, // { [pid]: { state, attack, ts } }
-    ready: {},
+    bag: generateSevenBagSequence(),
+    bagVersion: 1,
+    snapshots: {
+      [playerId]: {
+        state: {},
+        ts: Date.now(),
+        attackPending: 0,
+      },
+    }, // { [pid]: { state, attackPending, ts } }
+    ready: { [playerId]: false },
     startAt: null,
     roundActive: false,
     createdAt: Date.now(),
@@ -64,6 +90,27 @@ export async function joinRoom(code, playerId) {
     room.players.push(playerId);
   }
 
+  if (!room.bag || !Array.isArray(room.bag) || room.bag.length === 0) {
+    room.bag = generateSevenBagSequence();
+    room.bagVersion = room.bagVersion ? room.bagVersion + 1 : 1;
+  } else if (typeof room.bagVersion !== "number") {
+    room.bagVersion = 1;
+  }
+
+  if (!room.snapshots) room.snapshots = {};
+  if (!room.snapshots[playerId]) {
+    room.snapshots[playerId] = {
+      state: {},
+      ts: Date.now(),
+      attackPending: 0,
+    };
+  }
+
+  if (!room.ready) room.ready = {};
+  if (typeof room.ready[playerId] !== "boolean") {
+    room.ready[playerId] = false;
+  }
+
   await saveRoom(room);
   return room;
 }
@@ -76,13 +123,32 @@ export async function updateState(code, playerId, state, attack = 0) {
     room.roundActive = false;
   }
 
+  if (!room.bag || !Array.isArray(room.bag) || room.bag.length === 0) {
+    room.bag = generateSevenBagSequence();
+    room.bagVersion = room.bagVersion ? room.bagVersion + 1 : 1;
+  } else if (typeof room.bagVersion !== "number") {
+    room.bagVersion = 1;
+  }
+
   const atk = Math.max(0, Math.min(20, Math.floor(Number(attack) || 0)));
 
-  room.snapshots[playerId] = {
-    state,
-    attack: atk,
+  if (!room.snapshots) room.snapshots = {};
+  const existingSnapshot = room.snapshots[playerId] || {
+    state: {},
     ts: Date.now(),
+    attackPending: 0,
   };
+
+  existingSnapshot.state = state;
+  existingSnapshot.ts = Date.now();
+  if (atk > 0) {
+    existingSnapshot.attackPending =
+      (existingSnapshot.attackPending || 0) + atk;
+  } else if (typeof existingSnapshot.attackPending !== "number") {
+    existingSnapshot.attackPending = 0;
+  }
+
+  room.snapshots[playerId] = existingSnapshot;
 
   await saveRoom(room);
   return room;
