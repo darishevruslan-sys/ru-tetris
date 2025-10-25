@@ -19,6 +19,9 @@ if (typeof globalGameState.bagVersion !== 'number') {
 if (!Number.isFinite(globalGameState.pendingAttackToSend)) {
   globalGameState.pendingAttackToSend = 0;
 }
+if (!Number.isFinite(globalGameState.garbageQueue)) {
+  globalGameState.garbageQueue = 0;
+}
 if (typeof globalGameState.isRunning !== 'boolean') {
   globalGameState.isRunning = false;
 }
@@ -70,6 +73,18 @@ function getSharedPreview(count) {
     preview.push(g.sharedBag[idx]);
   }
   return preview;
+}
+
+function flushGarbageQueueIntoField() {
+  const g = window.__gameInstance;
+  if (!g || !Number.isFinite(g.garbageQueue) || g.garbageQueue <= 0) {
+    return;
+  }
+  const linesToAdd = g.garbageQueue;
+  g.garbageQueue = 0;
+  if (typeof g.applyIncomingGarbage === 'function') {
+    g.applyIncomingGarbage(linesToAdd);
+  }
 }
 
 function getCurrentGameMode() {
@@ -845,8 +860,8 @@ class MultiplayerClient {
         this.gameStarted = false;
       }
       this.lastState = snapshot;
-      const pendingAttack = Number.isFinite(g.pendingAttackToSend) ? g.pendingAttackToSend : 0;
-      const attackToSend = pendingAttack > 0 ? pendingAttack : 0;
+      const pendingAttackRaw = Number.isFinite(g.pendingAttackToSend) ? g.pendingAttackToSend : 0;
+      const attackToSend = Math.max(0, pendingAttackRaw);
       const deadFlag = this.shouldReportDeath();
 
       const payload = {
@@ -866,7 +881,10 @@ class MultiplayerClient {
         this.reportedDeath = true;
       }
 
-      g.pendingAttackToSend = 0;
+      g.pendingAttackToSend -= attackToSend;
+      if (!Number.isFinite(g.pendingAttackToSend) || g.pendingAttackToSend < 0) {
+        g.pendingAttackToSend = 0;
+      }
 
       if (resp.startAt !== undefined) {
         this.startAt = resp.startAt || null;
@@ -914,6 +932,7 @@ class MultiplayerClient {
           g.renderOpponent(null);
         }
         g.pendingAttackToSend = 0;
+        g.garbageQueue = 0;
         this.reportedDeath = false;
       } else {
         const startTime = resp.startAt || 0;
@@ -935,10 +954,9 @@ class MultiplayerClient {
         }
       }
 
-      if (resp.incomingGarbage && resp.incomingGarbage > 0) {
-        if (typeof g.applyIncomingGarbage === 'function') {
-          g.applyIncomingGarbage(resp.incomingGarbage);
-        }
+      if (typeof resp.incomingGarbage === 'number' && resp.incomingGarbage > 0) {
+        const currentGarbage = Number.isFinite(g.garbageQueue) ? g.garbageQueue : 0;
+        g.garbageQueue = currentGarbage + resp.incomingGarbage;
       }
 
       const opponents = resp.opponents || {};
@@ -1084,6 +1102,7 @@ class Game {
       g.isRunning = true;
       g.isDead = false;
       g.pendingAttackToSend = 0;
+      g.garbageQueue = 0;
       g.linesCleared = 0;
     }
     this.ensureQueue();
@@ -1093,6 +1112,7 @@ class Game {
   }
   update(dt) {
     if (this.state !== 'running') return;
+    flushGarbageQueueIntoField();
     this.stats.update(dt);
     if (this.areTimer > 0) {
       this.areTimer -= dt;
@@ -2248,6 +2268,7 @@ class App {
     if (g) {
       g.linesCleared = 0;
       g.pendingAttackToSend = 0;
+      g.garbageQueue = 0;
       g.isRunning = true;
       g.isDead = false;
       g.bagIndex = 0;
@@ -2266,6 +2287,7 @@ class App {
       }
       g.bagIndex = 0;
       g.pendingAttackToSend = 0;
+      g.garbageQueue = 0;
       g.isRunning = true;
       g.isDead = false;
       g.linesCleared = 0;
