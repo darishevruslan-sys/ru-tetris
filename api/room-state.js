@@ -2,7 +2,7 @@ import {
   updateState,
   getRoom,
   persistRoom,
-  generateSevenBagSequence,
+  ensureRoomBag,
 } from "./_rooms.js";
 
 function readBody(req) {
@@ -23,10 +23,11 @@ export default async function handler(req, res) {
   const roomCode = (body.roomCode || "").toUpperCase();
   const playerId = body.playerId;
   const state = body.state;
+  const rawAttack = body.attack;
   const attack =
-    typeof body.attack === "number" && Number.isFinite(body.attack)
-      ? body.attack
-      : Number.parseInt(body.attack, 10) || 0;
+    typeof rawAttack === "number" && Number.isFinite(rawAttack)
+      ? rawAttack
+      : Number.parseInt(rawAttack, 10) || 0;
   const dead = body.dead === true;
 
   if (!roomCode || !playerId || !state) {
@@ -55,17 +56,13 @@ export default async function handler(req, res) {
   }
   if (!room.ready) room.ready = {};
 
-  if (!room.bag || !Array.isArray(room.bag) || room.bag.length === 0) {
-    room.bag = generateSevenBagSequence();
-    room.bagVersion = room.bagVersion ? room.bagVersion + 1 : 1;
-  } else if (typeof room.bagVersion !== "number") {
-    room.bagVersion = 1;
-  }
+  ensureRoomBag(room);
 
   if (dead) {
     room.roundActive = false;
     room.startAt = null;
     const resetPlayers = Array.isArray(room.players) ? room.players : [];
+    if (!room.ready) room.ready = {};
     for (const pid of resetPlayers) {
       room.ready[pid] = false;
     }
@@ -82,17 +79,15 @@ export default async function handler(req, res) {
     const snap = room.snapshots[pid];
     if (!snap) continue;
 
-    if (pid === playerId) {
-      continue;
+    if (pid !== playerId) {
+      opponents[pid] = {
+        state: snap.state,
+      };
+
+      const pending = Math.max(0, Math.floor(Number(snap.attackPending) || 0));
+      incomingGarbage += pending;
+      snap.attackPending = 0;
     }
-
-    opponents[pid] = {
-      state: snap.state,
-    };
-
-    const pending = Math.max(0, Math.floor(Number(snap.attackPending) || 0));
-    incomingGarbage += pending;
-    snap.attackPending = 0;
   }
 
   await persistRoom(room);
