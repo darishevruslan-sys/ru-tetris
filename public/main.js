@@ -924,6 +924,10 @@ class MultiplayerClient {
           if ((hasNewBag || !this.gameStarted || !g.isRunning) && typeof g.startMultiplayerRoundFromServer === 'function') {
             g.startMultiplayerRoundFromServer(resp);
           }
+          if (!g.isRunning && typeof g.startNewRound === 'function') {
+            g.startNewRound();
+            g.isRunning = true;
+          }
           this.gameStarted = true;
           this.reportedDeath = false;
         } else {
