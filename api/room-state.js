@@ -23,7 +23,10 @@ export default async function handler(req, res) {
   const roomCode = (body.roomCode || "").toUpperCase();
   const playerId = body.playerId;
   const state = body.state;
-  const attack = body.attack || 0;
+  const attack =
+    typeof body.attack === "number" && Number.isFinite(body.attack)
+      ? body.attack
+      : Number.parseInt(body.attack, 10) || 0;
   const dead = body.dead === true;
 
   if (!roomCode || !playerId || !state) {
@@ -62,7 +65,8 @@ export default async function handler(req, res) {
   if (dead) {
     room.roundActive = false;
     room.startAt = null;
-    for (const pid of room.players || []) {
+    const resetPlayers = Array.isArray(room.players) ? room.players : [];
+    for (const pid of resetPlayers) {
       room.ready[pid] = false;
     }
   }
