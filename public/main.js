@@ -436,17 +436,6 @@ class ScreenManager {
   }
 }
 
-const DEFAULT_BINDINGS = {
-  moveLeft: 'ArrowLeft',
-  moveRight: 'ArrowRight',
-  softDrop: 'ArrowDown',
-  hardDrop: 'Space',
-  rotateCW: 'KeyX',
-  rotateCCW: 'KeyZ',
-  rotate180: 'KeyA',
-  hold: 'ShiftLeft'
-};
-
 const ACTIONS = [
   { id: 'moveLeft', icon: '←' },
   { id: 'moveRight', icon: '→' },
@@ -529,7 +518,7 @@ class SettingsUI {
     const entry = this.rows.get(this.waitingAction);
     if (entry) {
       entry.row.classList.remove('listening');
-      entry.btn.textContent = this.formatKey(this.store.getKeyForAction(this.waitingAction));
+      entry.btn.textContent = this.formatKey(this.store.get(this.waitingAction));
     }
     this.waitingAction = null;
   }
@@ -540,7 +529,7 @@ class SettingsUI {
       this.endListening();
       return;
     }
-    this.store.setBinding(this.waitingAction, event.code);
+    this.store.set(this.waitingAction, event.code);
     const entry = this.rows.get(this.waitingAction);
     if (entry) {
       entry.btn.textContent = this.formatKey(event.code);
@@ -2076,10 +2065,10 @@ class MatchmakingUI {
   }
 }
 class App {
-  constructor() {
+  constructor({ locale, settingsStore } = {}) {
     const initialMode = getCurrentGameMode();
-    this.locale = new Localization(i18n, 'ru');
-    this.settingsStore = new SettingsStore('ru-tetris-binds', DEFAULT_BINDINGS);
+    this.locale = locale || new Localization(i18n, 'ru');
+    this.settingsStore = settingsStore || new SettingsStore('ru-tetris-binds', DEFAULT_BINDINGS);
     this.screenManager = new ScreenManager();
     this.game = new Game(CONFIG);
     this.game.setMode(initialMode);
@@ -2350,5 +2339,11 @@ class App {
   }
 }
 
-new App();
+const localization = new Localization(i18n, 'ru');
+const settingsStore = new SettingsStore('ru-tetris-binds', DEFAULT_BINDINGS);
+
+new App({
+  locale: localization,
+  settingsStore
+});
 })();
