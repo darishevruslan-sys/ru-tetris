@@ -1,5 +1,4 @@
-import { i18n, Localization } from '../src/i18n/localization.js';
-import { DEFAULT_BINDINGS, SettingsStore } from '../src/settings/store.js';
+import { Board, COLORS, COMBO_ATTACK, LOCAL_PIECES, Tetromino, TETROMINO_SHAPES, getKickTable } from './src/engine/index.js';
 
 (() => {
 
@@ -250,7 +249,180 @@ function setupPostMatchButtons() {
 
 setupPostMatchButtons();
 
-const LOCAL_PIECES = ['I', 'J', 'L', 'O', 'S', 'T', 'Z'];
+const i18n = {
+  ru: {
+    menu: {
+      play40: 'Играть (40 линий)',
+      matchmaking: 'Онлайн матчмейкинг',
+      settings: 'Настройки управления',
+      login: 'Войти',
+      hint: 'Соревнуйтесь с собой и улучшайте время прохождения спринта на 40 линий.'
+    },
+    game: {
+      back: 'В меню'
+    },
+    settings: {
+      title: 'Настройки управления',
+      hint: 'Нажмите на действие и затем нажмите желаемую клавишу. Настройки сохраняются автоматически.',
+      waiting: 'Ожидание ввода...'
+    },
+    match: {
+      title: 'Онлайн матчмейкинг',
+      description: 'Введите код комнаты или создайте новую, чтобы начать матч.',
+      back: 'Назад',
+      join: 'Войти',
+      create: 'Создать комнату',
+      placeholder: 'Например, ABC123',
+      statusIdle: 'Введите код комнаты или создайте новую.',
+      statusNeedCode: 'Введите код комнаты, чтобы подключиться.',
+      statusConnecting: 'Подключение...',
+      statusError: 'Не удалось подключиться. Попробуйте ещё раз.',
+      createSuccess: 'Комната {{code}} создана. Поделитесь кодом с другом.',
+      joinSuccess: 'Вы присоединились к комнате {{code}}.',
+      localPlayer: 'Вы',
+      remotePlayer: 'Оппонент',
+      waitingOpponent: 'Ожидание данных от оппонента...',
+      ready: 'Готов',
+      notReady: 'Отменить готовность',
+      statusPromptReady: 'Нажмите «Готов», когда будете готовы к старту.',
+      statusWaitingOpponentReady: 'Ожидание готовности второго игрока...',
+      statusCountdown: 'Старт через 1.5 секунды...',
+      statusInGame: 'Матч идёт!'
+    },
+    login: {
+      title: 'Войти',
+      description: 'Авторизация появится позже. Следите за обновлениями!',
+      back: 'Назад'
+    },
+    result: {
+      title: '40 линий завершены!',
+      toMenu: 'В меню'
+    },
+    actions: {
+      moveLeft: 'Влево',
+      moveRight: 'Вправо',
+      softDrop: 'Soft drop',
+      hardDrop: 'Hard drop',
+      rotateCW: 'Поворот CW',
+      rotateCCW: 'Поворот CCW',
+      rotate180: 'Поворот 180°',
+      hold: 'Холд'
+    }
+  },
+  en: {
+    menu: {
+      play40: 'Play (40 Lines)',
+      matchmaking: 'Online Matchmaking',
+      settings: 'Controls',
+      login: 'Sign In',
+      hint: 'Race against yourself and improve your 40L sprint time.'
+    },
+    game: {
+      back: 'Main Menu'
+    },
+    settings: {
+      title: 'Controls',
+      hint: 'Click an action and press a key. The settings are saved automatically.',
+      waiting: 'Listening...'
+    },
+    match: {
+      title: 'Online Matchmaking',
+      description: 'Enter a room code or create a new one to start a match.',
+      back: 'Back',
+      join: 'Join',
+      create: 'Create Room',
+      placeholder: 'e.g. ABC123',
+      statusIdle: 'Enter a room code or create a new one.',
+      statusNeedCode: 'Type a room code to connect.',
+      statusConnecting: 'Connecting...',
+      statusError: 'Connection failed. Please try again.',
+      createSuccess: 'Room {{code}} created. Share the code with a friend.',
+      joinSuccess: 'Joined room {{code}}.',
+      localPlayer: 'You',
+      remotePlayer: 'Opponent',
+      waitingOpponent: 'Waiting for opponent data...',
+      ready: 'Ready',
+      notReady: 'Not Ready',
+      statusPromptReady: 'Press Ready when you are set to begin.',
+      statusWaitingOpponentReady: 'Waiting for the other player...',
+      statusCountdown: 'Starting in 1.5 seconds...',
+      statusInGame: 'Match in progress!'
+    },
+    login: {
+      title: 'Sign In',
+      description: 'Authentication will arrive in a future update. Stay tuned!',
+      back: 'Back'
+    },
+    result: {
+      title: '40 Lines Complete!',
+      toMenu: 'Main Menu'
+    },
+    actions: {
+      moveLeft: 'Move left',
+      moveRight: 'Move right',
+      softDrop: 'Soft drop',
+      hardDrop: 'Hard drop',
+      rotateCW: 'Rotate CW',
+      rotateCCW: 'Rotate CCW',
+      rotate180: 'Rotate 180°',
+      hold: 'Hold'
+    }
+  }
+};
+
+class Localization {
+  constructor(dictionary, lang = 'ru') {
+    this.dictionary = dictionary;
+    this.lang = lang;
+  }
+  t(path, values = {}) {
+    const segments = path.split('.');
+    let node = this.dictionary[this.lang];
+    for (const segment of segments) {
+      if (!node) break;
+      node = node[segment];
+    }
+    if (typeof node === 'string') {
+      return node.replace(/\{\{(\w+)\}\}/g, (match, key) => (key in values ? values[key] : match));
+    }
+    return node ?? path;
+  }
+}
+
+class SettingsStore {
+  constructor(storageKey, defaults) {
+    this.storageKey = storageKey;
+    this.defaults = defaults;
+    this.data = this.load();
+  }
+  load() {
+    try {
+      const raw = localStorage.getItem(this.storageKey);
+      if (!raw) return { ...this.defaults };
+      const parsed = JSON.parse(raw);
+      return { ...this.defaults, ...parsed };
+    } catch (err) {
+      return { ...this.defaults };
+    }
+  }
+  save() {
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify(this.data));
+    } catch (err) {
+      /* ignore */
+    }
+  }
+  getBindings() {
+    return { ...this.data };
+  }
+  setBinding(action, keyCode) {
+    this.data[action] = keyCode;
+    this.save();
+  }
+  getKeyForAction(action) {
+    return this.data[action] ?? null;
+  }
+}
 
 class ScreenManager {
   constructor() {
@@ -388,233 +560,6 @@ const CONFIG = {
   das: 0.13,
   arr: 0.03
 };
-
-const SPAWN_X_STD = 3;
-const SPAWN_X_O = 4;
-const SPAWN_Y_STD = -2;
-const SPAWN_POS = {
-  default: { x: SPAWN_X_STD, y: SPAWN_Y_STD },
-  I: { x: SPAWN_X_STD, y: SPAWN_Y_STD - 1 },
-  O: { x: SPAWN_X_O, y: SPAWN_Y_STD }
-};
-const COLORS = {
-  I: '#5dd9ff',
-  J: '#4f6bff',
-  L: '#ff9458',
-  O: '#ffd952',
-  S: '#66ff99',
-  T: '#c08cff',
-  Z: '#ff5f7a',
-  ghost: 'rgba(255,255,255,0.08)',
-  garbage: '#555555'
-};
-const TETROMINO_SHAPES = {
-  T: [
-    [[0, 1], [1, 0], [1, 1], [2, 1]],
-    [[1, 0], [1, 1], [1, 2], [2, 1]],
-    [[0, 1], [1, 1], [2, 1], [1, 2]],
-    [[0, 1], [1, 0], [1, 1], [1, 2]]
-  ],
-  J: [
-    [[0, 0], [0, 1], [1, 1], [2, 1]],
-    [[1, 0], [2, 0], [1, 1], [1, 2]],
-    [[0, 1], [1, 1], [2, 1], [2, 2]],
-    [[1, 0], [1, 1], [0, 2], [1, 2]]
-  ],
-  L: [
-    [[2, 0], [0, 1], [1, 1], [2, 1]],
-    [[1, 0], [1, 1], [1, 2], [2, 2]],
-    [[0, 1], [1, 1], [2, 1], [0, 2]],
-    [[0, 0], [1, 0], [1, 1], [1, 2]]
-  ],
-  S: [
-    [[1, 0], [2, 0], [0, 1], [1, 1]],
-    [[1, 0], [1, 1], [2, 1], [2, 2]],
-    [[1, 1], [2, 1], [0, 2], [1, 2]],
-    [[0, 0], [0, 1], [1, 1], [1, 2]]
-  ],
-  Z: [
-    [[0, 0], [1, 0], [1, 1], [2, 1]],
-    [[2, 0], [1, 1], [2, 1], [1, 2]],
-    [[0, 1], [1, 1], [1, 2], [2, 2]],
-    [[1, 0], [0, 1], [1, 1], [0, 2]]
-  ],
-  I: [
-    [[0, 1], [1, 1], [2, 1], [3, 1]],
-    [[2, 0], [2, 1], [2, 2], [2, 3]],
-    [[0, 2], [1, 2], [2, 2], [3, 2]],
-    [[1, 0], [1, 1], [1, 2], [1, 3]]
-  ],
-  O: [
-    [[0, 0], [1, 0], [0, 1], [1, 1]],
-    [[0, 0], [1, 0], [0, 1], [1, 1]],
-    [[0, 0], [1, 0], [0, 1], [1, 1]],
-    [[0, 0], [1, 0], [0, 1], [1, 1]]
-  ]
-};
-// JLSTZ (includes T, J, L, S, Z). Y-DOWN => all Y already inverted.
-const JLSTZ_KICKS = {
-  '0>1': [[0,0], [-1,0], [-1,-1], [0, 2], [-1, 2]],
-  '1>0': [[0,0], [ 1,0], [ 1, 1], [0,-2], [ 1,-2]],
-
-  '1>2': [[0,0], [ 1,0], [ 1, 1], [0,-2], [ 1,-2]],
-  '2>1': [[0,0], [-1,0], [-1,-1], [0, 2], [-1, 2]],
-
-  '2>3': [[0,0], [ 1,0], [ 1,-1], [0, 2], [ 1, 2]],
-  '3>2': [[0,0], [-1,0], [-1, 1], [0,-2], [-1,-2]],
-
-  '3>0': [[0,0], [-1,0], [-1, 1], [0,-2], [-1,-2]],
-  '0>3': [[0,0], [ 1,0], [ 1,-1], [0, 2], [ 1, 2]]
-};
-
-// I-piece SRS+ (tetr.io-style symmetric I kicks), Y-DOWN.
-const I_KICKS = {
-  '0>1': [[0,0], [-2,0], [ 1,0], [-2, 1], [ 1,-2]],
-  '1>0': [[0,0], [ 2,0], [-1,0], [ 2,-1], [-1, 2]],
-
-  '1>2': [[0,0], [-1,0], [ 2,0], [-1,-2], [ 2, 1]],
-  '2>1': [[0,0], [ 1,0], [-2,0], [ 1, 2], [-2,-1]],
-
-  '2>3': [[0,0], [ 2,0], [-1,0], [ 2,-1], [-1, 2]],
-  '3>2': [[0,0], [-2,0], [ 1,0], [-2,-1], [ 1, 2]],
-
-  '3>0': [[0,0], [-2,0], [ 1,0], [-2,-1], [ 1, 2]],
-  '0>3': [[0,0], [ 2,0], [-1,0], [ 2, 1], [-1,-2]]
-};
-
-const O_KICKS = {
-  '0>1': [[0, 0]],
-  '1>2': [[0, 0]],
-  '2>3': [[0, 0]],
-  '3>0': [[0, 0]],
-  '1>0': [[0, 0]],
-  '2>1': [[0, 0]],
-  '3>2': [[0, 0]],
-  '0>3': [[0, 0]]
-};
-
-function getKickTable(pieceType, fromState, toState) {
-  const key = `${fromState}>${toState}`;
-  if (pieceType === 'I') {
-    return I_KICKS[key] || [[0, 0]];
-  }
-  if (pieceType === 'O') {
-    return O_KICKS[key] || [[0, 0]];
-  }
-  return JLSTZ_KICKS[key] || [[0, 0]];
-}
-const COMBO_ATTACK = [0, 1, 1, 2, 3, 4, 4, 5, 6, 7, 8];
-
-class Tetromino {
-  constructor(type) {
-    this.type = type;
-    this.rotationState = 0;
-    const spawn = SPAWN_POS[type] || SPAWN_POS.default;
-    this.x = spawn.x;
-    this.y = spawn.y;
-    this.spinState = null;
-  }
-  clone() {
-    const t = new Tetromino(this.type);
-    t.rotationState = this.rotationState;
-    t.x = this.x;
-    t.y = this.y;
-    t.spinState = this.spinState ? { ...this.spinState } : null;
-    return t;
-  }
-  getShapeAtRotation(state = this.rotationState) {
-    const shapes = TETROMINO_SHAPES[this.type];
-    return shapes[state] || shapes[0];
-  }
-  cells(rot = this.rotationState, x = this.x, y = this.y) {
-    const shape = this.getShapeAtRotation(rot);
-    return shape.map(([dx, dy]) => ({ x: x + dx, y: y + dy }));
-  }
-}
-class Board {
-  constructor(width, height, hidden) {
-    this.width = width;
-    this.visibleHeight = height;
-    this.hidden = hidden;
-    this.height = height + hidden;
-    this.reset();
-  }
-  reset() {
-    this.grid = Array.from({ length: this.height }, () => Array(this.width).fill(null));
-    this.toppedOut = false;
-  }
-  isInside(x, y) {
-    return x >= 0 && x < this.width && y >= 0 && y < this.height;
-  }
-  isEmpty(x, y) {
-    if (y < 0) return true;
-    if (!this.isInside(x, y)) return false;
-    return this.grid[y][x] === null;
-  }
-  canPlace(shape, x, y) {
-    return shape.every(([dx, dy]) => {
-      const nx = x + dx;
-      const ny = y + dy;
-      return nx >= 0 && nx < this.width && ny < this.height && this.isEmpty(nx, ny);
-    });
-  }
-  isValid(piece, x = piece.x, y = piece.y, rot = piece.rotationState) {
-    const shape = piece.getShapeAtRotation(rot);
-    return this.canPlace(shape, x, y);
-  }
-  place(piece) {
-    let toppedOut = false;
-    for (const cell of piece.cells()) {
-      if (cell.y < 0) {
-        toppedOut = true;
-        continue;
-      }
-      if (cell.y < this.height) {
-        this.grid[cell.y][cell.x] = piece.type;
-      }
-    }
-    if (toppedOut) this.toppedOut = true;
-    return toppedOut;
-  }
-  clearLines() {
-    let cleared = 0;
-    for (let y = this.height - 1; y >= 0; y--) {
-      if (this.grid[y].every(v => v)) {
-        this.grid.splice(y, 1);
-        this.grid.unshift(Array(this.width).fill(null));
-        cleared++;
-        y++;
-      }
-    }
-    const perfectClear = cleared > 0 && this.grid.every(row => row.every(v => !v));
-    return { lines: cleared, perfectClear };
-  }
-  addGarbage(lines) {
-    const amount = Math.max(0, Math.floor(lines));
-    if (amount <= 0) return;
-    for (let i = 0; i < amount; i++) {
-      const hole = Math.floor(Math.random() * this.width);
-      const row = Array(this.width).fill('garbage');
-      row[hole] = null;
-      this.grid.shift();
-      this.grid.push(row);
-    }
-  }
-  getSnapshot() {
-    return this.grid.map(row => row.slice());
-  }
-  isToppedOut() {
-    if (this.toppedOut) return true;
-    // Hidden rows live above the visible field; any filled cell here signals top-out.
-    for (let y = 0; y < Math.min(this.hidden, this.grid.length); y++) {
-      if (this.grid[y].some(cell => cell !== null)) {
-        this.toppedOut = true;
-        return true;
-      }
-    }
-    return false;
-  }
-}
 
 class StatsTracker {
   constructor() {
